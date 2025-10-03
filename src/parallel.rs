@@ -1,5 +1,5 @@
-use std::ops::{Add, AddAssign};
 use crate::{common::LossyInto, vec::vec_uninit};
+use std::ops::{Add, AddAssign};
 
 ///Compute the inclusive prefix sum for the range `[first, last)`
 ///using the summation operator, and store the result in the range
@@ -12,11 +12,12 @@ pub fn inclusive_scan<IO>(mut input: impl Iterator<Item = IO>, output: &mut [IO]
 where
 	IO: Default + Copy + Add<Output = IO>,
 {
-	if output.len() == 0 { return; }
-	
+	if output.len() == 0 {
+		return;
+	}
+
 	output[0] = input.next().unwrap();
-	for i in 1..output.len()
-	{
+	for i in 1..output.len() {
 		output[i] = input.next().unwrap() + output[i - 1];
 	}
 }
@@ -39,14 +40,15 @@ where
 	F: FnMut(IO, IO) -> IO,
 {
 	let mut output = unsafe { vec_uninit(input.len()) };
-	if input.len() == 0 { return output; }
-	
+	if input.len() == 0 {
+		return output;
+	}
+
 	output[0] = init;
-	for i in 1..input.len()
-	{
+	for i in 1..input.len() {
 		output[i] = transform(output[i - 1], input[i - 1]);
 	}
-	
+
 	output
 }
 
@@ -67,8 +69,7 @@ where
 	IO: Copy + AddAssign,
 {
 	let mut acc = init;
-	for i in 0..io.len()
-	{
+	for i in 0..io.len() {
 		let old_val = io[i];
 		io[i] = acc;
 		acc += old_val;
@@ -89,18 +90,16 @@ where
 pub fn copy_if<IO, F>(input: impl Iterator<Item = IO>, output: &mut [IO], mut pred: F) -> usize
 where
 	IO: Copy,
-	F: FnMut(IO) -> bool
+	F: FnMut(IO) -> bool,
 {
 	let mut i = 0;
-	for input in input
-	{
-		if pred(input)
-		{
+	for input in input {
+		if pred(input) {
 			output[i] = input;
 			i += 1;
 		}
 	}
-	
+
 	i
 }
 
@@ -116,8 +115,7 @@ where
 	IO: Copy,
 	Map: Copy + LossyInto<usize>,
 {
-	for (i, input) in input.enumerate()
-	{
+	for (i, input) in input.enumerate() {
 		output[map[i].lossy_into()] = input;
 	}
 }
@@ -133,8 +131,7 @@ where
 	IO: Copy,
 	Map: Copy + LossyInto<usize>,
 {
-	for i in 0..map.len()
-	{
+	for i in 0..map.len() {
 		output[i] = input[map[i].lossy_into()];
 	}
 }
@@ -145,14 +142,17 @@ where
 ///is assigned to `outputFirst[i - map_first]`.
 ///
 ///The map range, input range and the output range must not overlap.
-pub fn gather_transformed<IO, Map, F>(map: &[Map], input: &[IO], output: &mut [IO], mut transform: F)
-where
+pub fn gather_transformed<IO, Map, F>(
+	map: &[Map],
+	input: &[IO],
+	output: &mut [IO],
+	mut transform: F,
+) where
 	IO: Copy,
 	Map: Copy + LossyInto<usize>,
-	F: FnMut(IO) -> IO
+	F: FnMut(IO) -> IO,
 {
-	for i in 0..map.len()
-	{
+	for i in 0..map.len() {
 		output[i] = transform(input[map[i].lossy_into()]);
 	}
 }
