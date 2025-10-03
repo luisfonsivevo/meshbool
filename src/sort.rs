@@ -67,13 +67,11 @@ impl Impl
 	{
 		let num_vert = self.num_vert();
 		let mut vert_morton: Vec<u32> = unsafe { vec_uninit(num_vert) };
-		println!("start");
 		for vert in 0..num_vert
 		{
 			println!("{:?}", self.bbox);
 			vert_morton[vert] = morton_code(self.vert_pos[vert], self.bbox);
 		}
-		println!("end");
 		
 		let mut vert_new2old: Vec<_> = (0..num_vert as i32).collect();
 		vert_new2old.sort_by_key(|&i| vert_morton[i as usize]);

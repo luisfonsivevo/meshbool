@@ -1,7 +1,3 @@
-//actual parallelization code is removed due to
-//borger's specific use case not needing it. also
-//i am lazy
-
 use std::ops::{Add, AddAssign};
 use crate::{common::LossyInto, vec::vec_uninit};
 
