@@ -69,7 +69,6 @@ impl Impl
 		let mut vert_morton: Vec<u32> = unsafe { vec_uninit(num_vert) };
 		for vert in 0..num_vert
 		{
-			println!("{:?}", self.bbox);
 			vert_morton[vert] = morton_code(self.vert_pos[vert], self.bbox);
 		}
 		
