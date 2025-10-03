@@ -1,4 +1,4 @@
-use nalgebra::{Matrix3, Matrix3x4, Point3, Vector2, Vector3};
+use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
 use crate::boolean3::Boolean3;
 use crate::common::OpType;
 use crate::r#impl::{Impl, Relation};
@@ -201,6 +201,52 @@ pub fn translate(r#impl: &Impl, v: Point3<f64>) -> Impl
 	let mut transform = Matrix3x4::<f64>::identity();
 	*transform.column_mut(3) = *v;
 	r#impl.transform(&transform)
+}
+
+///Scale this Manifold in space. This operation can be chained. Transforms are
+///combined and applied lazily.
+///
+///@param v The vector to multiply every vertex by per component.
+pub fn scale(r#impl: &Impl, v: Vector3<f64>) -> Impl
+{
+	let mut transform = Matrix3x4::<f64>::identity();
+	for i in 0..3
+	{
+		transform[(i, i)] = v[i];
+	}
+	
+	r#impl.transform(&transform)
+}
+
+///Applies an Euler angle rotation to the manifold, first about the X axis, then
+///Y, then Z, in degrees. We use degrees so that we can minimize rounding error,
+///and eliminate it completely for any multiples of 90 degrees. Additionally,
+///more efficient code paths are used to update the manifold when the transforms
+///only rotate by multiples of 90 degrees. This operation can be chained.
+///Transforms are combined and applied lazily.
+///
+///@param xDegrees First rotation, degrees about the X-axis.
+///@param yDegrees Second rotation, degrees about the Y-axis.
+///@param zDegrees Third rotation, degrees about the Z-axis.
+pub fn rotate(r#impl: &Impl, x_degrees: f64, y_degrees: f64, z_degrees: f64) -> Impl
+{
+	let transform = UnitQuaternion::
+			from_euler_angles(x_degrees.to_radians(), y_degrees.to_radians(), z_degrees.to_radians())
+			.to_homogeneous()
+			.fixed_view::<3, 4>(0, 0)
+			.into_owned();
+	
+	r#impl.transform(&transform)
+}
+
+///Transform this Manifold in space. The first three columns form a 3x3 matrix
+///transform and the last is a translation vector. This operation can be
+///chained. Transforms are combined and applied lazily.
+///
+///@param m The affine transform matrix to apply to all the vertices.
+pub fn transform(r#impl: &Impl, m: &Matrix3x4<f64>) -> Impl
+{
+	r#impl.transform(&m)
 }
 
 ///	The central operation of this library: the Boolean combines two manifolds
