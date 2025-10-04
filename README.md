@@ -24,7 +24,7 @@ let mesh = meshbool::get_mesh_gl(&union, 0);
 ```TOML
 #currently not published to crates.io until testing suite has been ported
 [dependencies]
-meshbool = { git = "https://github.com/user/repo", branch = "main" }
+meshbool = { git = "https://github.com/luisfonsivevo/meshbool.git" }
 ```
 
 In its **current state**, meshbool is utter chaos:
