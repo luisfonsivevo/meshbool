@@ -1,6 +1,7 @@
 use crate::boolean3::Boolean3;
-use crate::common::OpType;
-use crate::r#impl::{Impl, Relation};
+pub use crate::common::OpType;
+pub use crate::r#impl::Impl;
+use crate::r#impl::Relation;
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
@@ -162,6 +163,33 @@ pub struct MeshGL {
 	pub tolerance: f32,
 }
 
+impl Default for MeshGL {
+	fn default() -> Self {
+		Self {
+			num_prop: 3,
+			tolerance: 0.0,
+			vert_properties: Vec::default(),
+			tri_verts: Vec::default(),
+			merge_from_vert: Vec::default(),
+			merge_to_vert: Vec::default(),
+			run_index: Vec::default(),
+			run_original_id: Vec::default(),
+			run_transform: Vec::default(),
+			face_id: Vec::default(),
+		}
+	}
+}
+
+impl MeshGL {
+	pub fn num_vert(&self) -> usize {
+		self.vert_properties.len() / self.num_prop as usize
+	}
+
+	pub fn num_tri(&self) -> usize {
+		self.tri_verts.len() / 3
+	}
+}
+
 fn invalid() -> Impl {
 	let mut r#impl = Impl::default();
 	r#impl.status = ManifoldError::InvalidConstruction;
@@ -303,6 +331,14 @@ pub enum ManifoldError {
 	NonFiniteVertex,
 	InvalidConstruction,
 	ResultTooLarge,
+	NotManifold,
+	MissingPositionProperties,
+	MergeVectorsDifferentLengths,
+	TransformWrongLength,
+	RunIndexWrongLength,
+	FaceIDWrongLength,
+	MergeIndexOutOfBounds,
+	VertexOutOfBounds,
 }
 
 ///The most complete output of this library, returning a MeshGL that is designed

@@ -1,4 +1,3 @@
-use crate::ManifoldError;
 use crate::collider::Collider;
 use crate::common::{AABB, sun_acos};
 use crate::disjoint_sets::DisjointSets;
@@ -7,6 +6,7 @@ use crate::parallel::exclusive_scan_in_place;
 use crate::shared::{Halfedge, TriRef, max_epsilon, next_halfedge, normal_transform};
 use crate::utils::{atomic_add_i32, mat3, mat4, next3_i32, next3_usize};
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
+use crate::{ManifoldError, MeshGL};
 use nalgebra::{Matrix3x4, Point3, Vector3, Vector4};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeMap, HashMap};
@@ -174,6 +174,247 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 }
 
 impl Impl {
+	pub fn from_meshgl(mesh_gl: MeshGL) -> Self {
+		let num_vert = mesh_gl.num_vert();
+		let num_tri = mesh_gl.num_tri();
+
+		let mut manifold = Self::default();
+
+		if num_vert == 0 && num_tri == 0 {
+			manifold.make_empty(ManifoldError::NoError);
+			return manifold;
+		}
+
+		if num_vert < 4 || num_tri < 4 {
+			manifold.make_empty(ManifoldError::NotManifold);
+			return manifold;
+		}
+
+		if mesh_gl.num_prop < 3 {
+			manifold.make_empty(ManifoldError::MissingPositionProperties);
+			return manifold;
+		}
+
+		if mesh_gl.merge_from_vert.len() != mesh_gl.merge_to_vert.len() {
+			manifold.make_empty(ManifoldError::MergeVectorsDifferentLengths);
+			return manifold;
+		}
+
+		if !mesh_gl.run_transform.is_empty()
+			&& 12 * mesh_gl.run_original_id.len() != mesh_gl.run_transform.len()
+		{
+			manifold.make_empty(ManifoldError::TransformWrongLength);
+			return manifold;
+		}
+
+		if !mesh_gl.run_original_id.is_empty()
+			&& !mesh_gl.run_index.is_empty()
+			&& mesh_gl.run_original_id.len() + 1 != mesh_gl.run_index.len()
+			&& mesh_gl.run_original_id.len() != mesh_gl.run_index.len()
+		{
+			manifold.make_empty(ManifoldError::RunIndexWrongLength);
+			return manifold;
+		}
+
+		if !mesh_gl.face_id.is_empty() && mesh_gl.face_id.len() != mesh_gl.num_tri() {
+			manifold.make_empty(ManifoldError::FaceIDWrongLength);
+			return manifold;
+		}
+
+		if mesh_gl.vert_properties.iter().any(|v| !v.is_finite()) {
+			manifold.make_empty(ManifoldError::NonFiniteVertex);
+			return manifold;
+		}
+
+		if mesh_gl.run_transform.iter().any(|x| !x.is_finite()) {
+			manifold.make_empty(ManifoldError::InvalidConstruction);
+			return manifold;
+		}
+
+		// if (!manifold::all_of(meshGL.halfedgeTangent.begin(),
+		//                       meshGL.halfedgeTangent.end(),
+		//                       [](Precision x) { return std::isfinite(x); })) {
+		//   MakeEmpty(Error::InvalidConstruction);
+		//   return;
+		// }
+
+		let mut prop2vert: Vec<i32>;
+		if !mesh_gl.merge_from_vert.is_empty() {
+			prop2vert = (0..num_vert as i32).collect();
+			for i in 0..mesh_gl.merge_from_vert.len() {
+				let from = mesh_gl.merge_from_vert[i];
+				let to = mesh_gl.merge_to_vert[i];
+				if from as usize >= num_vert || to as usize >= num_vert {
+					manifold.make_empty(ManifoldError::MergeIndexOutOfBounds);
+					return manifold;
+				}
+				prop2vert[from as usize] = to as i32;
+			}
+		} else {
+			prop2vert = vec![];
+		}
+
+		let num_prop = mesh_gl.num_prop - 3;
+		manifold.num_prop = num_prop as i32;
+		unsafe {
+			vec_resize_nofill(
+				&mut manifold.properties,
+				mesh_gl.num_vert() * num_prop as usize,
+			)
+		};
+		manifold.tolerance = mesh_gl.tolerance.into();
+		// This will have unreferenced duplicate positions that will be removed by
+		// Impl::remove_unreferenced_verts().
+		unsafe { vec_resize_nofill(&mut manifold.vert_pos, mesh_gl.num_vert()) };
+
+		for i in 0..mesh_gl.num_vert() {
+			for j in [0, 1, 2] {
+				manifold.vert_pos[i][j] =
+					mesh_gl.vert_properties[mesh_gl.num_prop as usize * i + j].into();
+			}
+			for j in 0..num_prop {
+				manifold.properties[i * num_prop as usize + j as usize] =
+					mesh_gl.vert_properties[mesh_gl.num_prop as usize * i + 3 + j as usize].into();
+			}
+		}
+
+		// halfedgeTangent_.resize_nofill(meshGL.halfedgeTangent.len() / 4);
+		// for i in 0..halfedgeTangent_.len() {
+		//   for j in [0, 1, 2, 3] {
+		//     halfedgeTangent_[i][j] = meshGL.halfedgeTangent[4 * i + j];
+		//   }
+		// }
+
+		let mut tri_ref: Vec<TriRef> = unsafe { vec_uninit(mesh_gl.num_tri()) };
+
+		let mut run_index = mesh_gl.run_index;
+		let run_end = mesh_gl.tri_verts.len();
+		if run_index.is_empty() {
+			run_index = vec![0, run_end as u32];
+		} else if run_index.len() == mesh_gl.run_original_id.len() {
+			run_index.push(run_end as u32);
+		} else if run_index.len() == 1 {
+			run_index.push(run_end as u32);
+		}
+
+		let start_id = Impl::reserve_ids(1.max(mesh_gl.run_original_id.len()));
+		let mut run_original_id = mesh_gl.run_original_id;
+		if run_original_id.is_empty() {
+			run_original_id.push(start_id as u32);
+		}
+		for i in 0..run_original_id.len() {
+			let mesh_id = start_id + i;
+			let original_id = run_original_id[i];
+			for tri in (run_index[i] / 3)..(run_index[i + 1] / 3) {
+				let r = &mut tri_ref[tri as usize];
+				r.mesh_id = mesh_id as i32;
+				r.original_id = original_id as i32;
+				r.face_id = if mesh_gl.face_id.is_empty() {
+					-1
+				} else {
+					mesh_gl.face_id[tri as usize] as i32
+				};
+				r.coplanar_id = tri as i32;
+			}
+
+			if mesh_gl.run_transform.is_empty() {
+				manifold.mesh_relation.mesh_id_transform.insert(
+					mesh_id as i32,
+					Relation {
+						original_id: original_id as i32,
+						..Relation::default() //in c++ the rest were uninitialized
+					},
+				);
+			} else {
+				let m = &mesh_gl.run_transform[12 * i..];
+				manifold.mesh_relation.mesh_id_transform.insert(
+					mesh_id as i32,
+					Relation {
+						original_id: original_id as i32,
+						transform: [
+							[m[0] as f64, m[1] as f64, m[2] as f64],
+							[m[3] as f64, m[4] as f64, m[5] as f64],
+							[m[6] as f64, m[7] as f64, m[8] as f64],
+							[m[9] as f64, m[10] as f64, m[11] as f64],
+						]
+						.into(),
+						..Relation::default()
+					},
+				);
+			}
+		}
+
+		let mut tri_prop: Vec<Vector3<i32>> = Vec::with_capacity(num_tri);
+		let mut tri_vert: Vec<Vector3<i32>> = vec![];
+		let needs_prop_map = num_prop > 0 && !prop2vert.is_empty();
+		if needs_prop_map {
+			tri_vert.reserve(num_tri)
+		}
+		if tri_ref.len() > 0 {
+			manifold.mesh_relation.tri_ref.reserve(num_tri);
+		}
+		for i in 0..num_tri {
+			let mut tri_p: Vector3<i32> = Vector3::default();
+			let mut tri_v: Vector3<i32> = Vector3::default();
+			for j in [0, 1, 2] {
+				let vert = mesh_gl.tri_verts[3 * i + j];
+				if vert as usize >= num_vert {
+					manifold.make_empty(ManifoldError::VertexOutOfBounds);
+					return manifold;
+				}
+				tri_p[j] = vert as i32;
+				tri_v[j] = if prop2vert.is_empty() {
+					vert as i32
+				} else {
+					prop2vert[vert as usize]
+				};
+			}
+			if tri_v[0] != tri_v[1] && tri_v[1] != tri_v[2] && tri_v[2] != tri_v[0] {
+				if needs_prop_map {
+					tri_prop.push(tri_p);
+					tri_vert.push(tri_v);
+				} else {
+					tri_prop.push(tri_v);
+				}
+				if tri_ref.len() > 0 {
+					manifold.mesh_relation.tri_ref.push(tri_ref[i]);
+				}
+			}
+		}
+
+		manifold.create_halfedges(tri_prop, tri_vert);
+		if !manifold.is_manifold() {
+			manifold.make_empty(ManifoldError::NotManifold);
+			return manifold;
+		}
+
+		manifold.calculate_bbox();
+		manifold.set_epsilon(-1.0f64, false); // TODO: if Precision == float
+
+		// we need to split pinched verts before calculating vertex normals, because
+		// the algorithm doesn't work with pinched verts
+		manifold.cleanup_topology();
+		manifold.calculate_normals();
+
+		manifold.dedupe_prop_verts();
+		manifold.mark_coplanar();
+
+		manifold.remove_degenerates(None);
+		manifold.remove_unreferenced_verts();
+		manifold.finish();
+
+		if !manifold.is_finite() {
+			manifold.make_empty(ManifoldError::NonFiniteVertex);
+			return manifold;
+		}
+
+		// A Manifold created from an input mesh is never an original - the input is
+		// the original.
+		manifold.mesh_relation.original_id = -1;
+
+		manifold
+	}
+
 	pub(crate) fn from_shape(shape: Shape, m: Matrix3x4<f64>) -> Self {
 		let (mut vert_pos, tri_verts) = match shape {
 			Shape::Tetrahedron => (
