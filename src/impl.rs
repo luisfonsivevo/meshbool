@@ -1,6 +1,7 @@
 use crate::ManifoldError;
 use crate::collider::Collider;
 use crate::common::{AABB, sun_acos};
+use crate::disjoint_sets::DisjointSets;
 use crate::mesh_fixes::{FlipTris, transform_normal};
 use crate::parallel::exclusive_scan_in_place;
 use crate::shared::{Halfedge, TriRef, max_epsilon, next_halfedge, normal_transform};
@@ -856,6 +857,75 @@ impl Impl {
 			if current == halfedge {
 				break;
 			}
+		}
+	}
+
+	///Dereference duplicate property vertices if they are exactly floating-point
+	///equal. These unreferenced properties are then removed by CompactProps.
+	pub(crate) fn dedupe_prop_verts(&mut self) {
+		let num_prop = self.num_prop();
+		if num_prop == 0 {
+			return;
+		}
+
+		let mut vert2vert: Vec<(i32, i32)> = vec![(-1, -1); self.halfedge.len()];
+		for edge_idx in 0..self.halfedge.len() {
+			let edge = self.halfedge[edge_idx];
+			if edge.paired_halfedge < 0 {
+				continue;
+			}
+			let edge_face = edge_idx / 3;
+			let pair_face = edge.paired_halfedge / 3;
+
+			if self.mesh_relation.tri_ref[edge_face].mesh_id
+				!= self.mesh_relation.tri_ref[pair_face as usize].mesh_id
+			{
+				continue;
+			}
+
+			let prop0 = self.halfedge[edge_idx].prop_vert;
+			let prop1 = self.halfedge[next_halfedge(edge.paired_halfedge) as usize].prop_vert;
+			let mut prop_equal = true;
+			for p in 0..num_prop {
+				if self.properties[num_prop * prop0 as usize + p]
+					!= self.properties[num_prop * prop1 as usize + p]
+				{
+					prop_equal = false;
+					break;
+				}
+			}
+			if prop_equal {
+				vert2vert[edge_idx] = (prop0, prop1);
+			}
+		}
+
+		let mut vert_labels: Vec<i32> = vec![];
+		let num_prop_vert = self.num_prop_vert();
+
+		fn get_labels(
+			components: &mut Vec<i32>,
+			edges: &Vec<(i32, i32)>,
+			num_nodes: usize,
+		) -> usize {
+			let uf = DisjointSets::new(num_nodes as u32);
+			for edge in edges {
+				if edge.0 == -1 || edge.1 == -1 {
+					continue;
+				}
+				uf.unite(edge.0 as u32, edge.1 as u32);
+			}
+
+			return uf.connected_components(components);
+		}
+
+		let num_labels = get_labels(&mut vert_labels, &vert2vert, num_prop_vert);
+
+		let mut label2vert: Vec<i32> = Vec::with_capacity(num_labels);
+		for v in 0..num_prop_vert {
+			label2vert[vert_labels[v] as usize] = v as i32;
+		}
+		for edge in self.halfedge.iter_mut() {
+			edge.prop_vert = label2vert[vert_labels[edge.prop_vert as usize] as usize];
 		}
 	}
 }
