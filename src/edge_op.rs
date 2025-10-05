@@ -221,6 +221,17 @@ impl Impl {
 		self.swap_degenerates(first_new_vert);
 	}
 
+	pub(crate) fn remove_degenerates(&mut self, first_new_vert: Option<i32>) {
+		let first_new_vert = first_new_vert.unwrap_or(0);
+		if self.halfedge.is_empty() {
+			return;
+		}
+
+		self.cleanup_topology();
+		self.collapse_short_edges(first_new_vert);
+		self.swap_degenerates(first_new_vert);
+	}
+
 	fn collapse_short_edges(&mut self, first_new_vert: i32) {
 		let mut s = FlagStore::default();
 		let mut num_flagged = 0;
