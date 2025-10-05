@@ -102,4 +102,13 @@ impl Impl {
 			},
 		);
 	}
+
+	///Determines if all verts are finite. Checking just the bounding box dimensions
+	///is insufficient as it ignores NaNs.
+	pub(crate) fn is_finite(&self) -> bool {
+		!self
+			.vert_pos
+			.iter()
+			.any(|v| v.iter().any(|f| !f.is_finite()))
+	}
 }
