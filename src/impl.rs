@@ -15,9 +15,9 @@ use std::f64;
 
 #[derive(Copy, Clone)]
 #[allow(unused)]
-pub enum Shape { Tetrahedron, Cube, Octahedron }
+pub(crate) enum Shape { Tetrahedron, Cube, Octahedron }
 
-pub static MESH_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static MESH_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 ///@brief This library's internal representation of an oriented, 2-manifold,
 ///triangle mesh - a simple boundary-representation of a solid object. Use this
@@ -40,7 +40,7 @@ pub static MESH_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 ///operations, particularly useful for materials. Since separate object's
 ///properties are not mixed, there is no requirement that channels have
 ///consistent meaning between different inputs.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Impl
 {
 	pub(crate) bbox: AABB,
@@ -59,29 +59,8 @@ pub struct Impl
 	pub(crate) collider: Collider,
 }
 
-#[derive(Clone, Copy)]
-pub struct Relation
-{
-	pub original_id: i32,
-	pub transform: Matrix3x4<f64>,
-	pub back_side: bool,
-}
-
-impl Default for Relation
-{
-	fn default() -> Self
-	{
-		Self
-		{
-			original_id: -1,
-			transform: Matrix3x4::identity(),
-			back_side: false,
-		}
-	}
-}
-
-#[derive(Clone)]
-pub struct MeshRelationD
+#[derive(Clone, Debug)]
+pub(crate) struct MeshRelationD
 {
 	/// The originalID of this Manifold if it is an original; -1 otherwise.
 	pub original_id: i32,
@@ -98,6 +77,27 @@ impl Default for MeshRelationD
 			original_id: -1,
 			mesh_id_transform: BTreeMap::default(),
 			tri_ref: Vec::default(),
+		}
+	}
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Relation
+{
+	pub original_id: i32,
+	pub transform: Matrix3x4<f64>,
+	pub back_side: bool,
+}
+
+impl Default for Relation
+{
+	fn default() -> Self
+	{
+		Self
+		{
+			original_id: -1,
+			transform: Matrix3x4::identity(),
+			back_side: false,
 		}
 	}
 }

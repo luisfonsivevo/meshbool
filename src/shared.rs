@@ -173,7 +173,7 @@ impl Halfedge
 	}
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TriRef
 {
 	/// The unique ID of the mesh instance of this triangle. If .meshID and .tri

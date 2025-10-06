@@ -7,7 +7,7 @@ use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
 pub use constructors::*;
 
-mod r#impl;
+pub mod r#impl;
 mod sort;
 mod properties;
 mod shared;
@@ -317,7 +317,7 @@ impl BitXorAssign<&Self> for Impl
 	}
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ManifoldError
 {
 	NoError,

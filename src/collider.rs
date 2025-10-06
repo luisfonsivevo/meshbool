@@ -234,7 +234,7 @@ pub trait Recorder
 	fn record(&mut self, query_idx: i32, leaf_idx: i32);
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Collider
 {
 	node_bbox: Vec<AABB>,
