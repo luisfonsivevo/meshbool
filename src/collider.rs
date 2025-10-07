@@ -237,10 +237,10 @@ pub trait Recorder
 #[derive(Clone, Default, Debug)]
 pub struct Collider
 {
-	node_bbox: Vec<AABB>,
-	node_parent: Vec<i32>,
+	pub node_bbox: Vec<AABB>,
+	pub node_parent: Vec<i32>,
 	// even nodes are leaves, odd nodes are internal, root is 1
-	internal_children: Vec<(i32, i32)>,
+	pub internal_children: Vec<(i32, i32)>,
 }
 
 impl Collider

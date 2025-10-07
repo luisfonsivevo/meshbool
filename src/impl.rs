@@ -43,24 +43,24 @@ pub(crate) static MESH_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 #[derive(Clone, Debug)]
 pub struct Impl
 {
-	pub(crate) bbox: AABB,
-	pub(crate) epsilon: f64,
-	pub(crate) tolerance: f64,
-	pub(crate) num_prop: i32,
-	pub(crate) status: ManifoldError,
-	pub(crate) vert_pos: Vec<Point3<f64>>,
-	pub(crate) halfedge: Vec<Halfedge>,
-	pub(crate) properties: Vec<f64>,
+	pub bbox: AABB,
+	pub epsilon: f64,
+	pub tolerance: f64,
+	pub num_prop: i32,
+	pub status: ManifoldError,
+	pub vert_pos: Vec<Point3<f64>>,
+	pub halfedge: Vec<Halfedge>,
+	pub properties: Vec<f64>,
 	// Note that vertNormal_ is not precise due to the use of an approximated acos
 	// function
-	pub(crate) vert_normal: Vec<Vector3<f64>>,
-	pub(crate) face_normal: Vec<Vector3<f64>>,
-	pub(crate) mesh_relation: MeshRelationD,
-	pub(crate) collider: Collider,
+	pub vert_normal: Vec<Vector3<f64>>,
+	pub face_normal: Vec<Vector3<f64>>,
+	pub mesh_relation: MeshRelationD,
+	pub collider: Collider,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct MeshRelationD
+pub struct MeshRelationD
 {
 	/// The originalID of this Manifold if it is an original; -1 otherwise.
 	pub original_id: i32,
@@ -82,7 +82,7 @@ impl Default for MeshRelationD
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Relation
+pub struct Relation
 {
 	pub original_id: i32,
 	pub transform: Matrix3x4<f64>,
