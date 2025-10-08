@@ -171,6 +171,28 @@ fn invalid() -> Impl
 	r#impl
 }
 
+///Return a copy of the manifold simplified to the given tolerance, but with its
+///actual tolerance value unchanged. If the tolerance is not given or is less
+///than the current tolerance, the current tolerance is used for simplification.
+///The result will contain a subset of the original verts and all surfaces will
+///have moved by less than tolerance.
+pub fn simplify(r#impl: &Impl, tolerance: Option<f64>) -> Impl
+{
+	let mut r#impl = r#impl.clone();
+	let old_tolerance = r#impl.tolerance;
+	let tolerance = tolerance.unwrap_or(old_tolerance);
+	if tolerance > old_tolerance
+	{
+		r#impl.tolerance = tolerance;
+		r#impl.mark_coplanar();
+	}
+	
+	r#impl.simplify_topology(0);
+	r#impl.finish();
+	r#impl.tolerance = tolerance;
+	r#impl
+}
+
 ///This removes all relations (originalID, faceID, transform) to ancestor meshes
 ///and this new Manifold is marked an original. It also recreates faces
 ///- these don't get joined at boundaries where originalID changes, so the
