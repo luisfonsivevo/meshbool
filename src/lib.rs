@@ -6,8 +6,6 @@ use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
-pub use constructors::*;
-
 mod boolean3;
 mod boolean_result;
 mod collider;
@@ -32,17 +30,17 @@ fn test() {
 	use nalgebra::Vector3;
 
 	//just make sure it don't crash at the sight of the simplest shapes
-	let cube1 = cube(Vector3::new(1.0, 1.0, 1.0), true);
-	let cube2 = cube(Vector3::new(1.0, 1.0, 1.0), false);
+	let cube1 = Impl::cube(Vector3::new(1.0, 1.0, 1.0), true);
+	let cube2 = Impl::cube(Vector3::new(1.0, 1.0, 1.0), false);
 
 	let union = &cube1 + &cube2;
-	println!("{:?}", get_mesh_gl(&union, 0));
+	println!("{:?}", union.get_mesh_gl(0));
 
 	let difference = &cube1 - &cube2;
-	println!("{:?}", get_mesh_gl(&difference, 0));
+	println!("{:?}", difference.get_mesh_gl(0));
 
 	let intersection = &cube1 ^ &cube2;
-	println!("{:?}", get_mesh_gl(&intersection, 0));
+	println!("{:?}", intersection.get_mesh_gl(0));
 }
 
 ///@brief Mesh input/output suitable for pushing directly into graphics
@@ -190,158 +188,345 @@ impl MeshGL {
 	}
 }
 
-fn invalid() -> Impl {
-	let mut r#impl = Impl::default();
-	r#impl.status = ManifoldError::InvalidConstruction;
-	r#impl
-}
+impl Impl {
+	fn invalid() -> Self {
+		let mut r#impl = Self::default();
+		r#impl.status = ManifoldError::InvalidConstruction;
+		r#impl
+	}
 
-///Return a copy of the manifold simplified to the given tolerance, but with its
-///actual tolerance value unchanged. If the tolerance is not given or is less
-///than the current tolerance, the current tolerance is used for simplification.
-///The result will contain a subset of the original verts and all surfaces will
-///have moved by less than tolerance.
-pub fn simplify(r#impl: &Impl, tolerance: Option<f64>) -> Impl {
-	let mut r#impl = r#impl.clone();
-	let old_tolerance = r#impl.tolerance;
-	let tolerance = tolerance.unwrap_or(old_tolerance);
-	if tolerance > old_tolerance {
+	///Return a copy of the manifold simplified to the given tolerance, but with its
+	///actual tolerance value unchanged. If the tolerance is not given or is less
+	///than the current tolerance, the current tolerance is used for simplification.
+	///The result will contain a subset of the original verts and all surfaces will
+	///have moved by less than tolerance.
+	pub fn simplify(&self, tolerance: Option<f64>) -> Self {
+		let mut r#impl = self.clone();
+		let old_tolerance = r#impl.tolerance;
+		let tolerance = tolerance.unwrap_or(old_tolerance);
+		if tolerance > old_tolerance {
+			r#impl.tolerance = tolerance;
+			r#impl.mark_coplanar();
+		}
+
+		r#impl.simplify_topology(0);
+		r#impl.finish();
 		r#impl.tolerance = tolerance;
-		r#impl.mark_coplanar();
+		r#impl
 	}
 
-	r#impl.simplify_topology(0);
-	r#impl.finish();
-	r#impl.tolerance = tolerance;
-	r#impl
-}
+	///This removes all relations (originalID, faceID, transform) to ancestor meshes
+	///and this new Manifold is marked an original. It also recreates faces
+	///- these don't get joined at boundaries where originalID changes, so the
+	///reset may allow triangles of flat faces to be further collapsed with
+	///Simplify().
+	pub fn as_original(&self) -> Self {
+		if self.status != ManifoldError::NoError {
+			let mut new_impl = Self::default();
+			new_impl.status = self.status;
+			return new_impl;
+		}
 
-///This removes all relations (originalID, faceID, transform) to ancestor meshes
-///and this new Manifold is marked an original. It also recreates faces
-///- these don't get joined at boundaries where originalID changes, so the
-///reset may allow triangles of flat faces to be further collapsed with
-///Simplify().
-pub fn as_original(old_impl: &Impl) -> Impl {
-	if old_impl.status != ManifoldError::NoError {
-		let mut new_impl = Impl::default();
-		new_impl.status = old_impl.status;
-		return new_impl;
+		let mut new_impl = self.clone();
+		new_impl.initialize_original(false);
+		new_impl.mark_coplanar();
+		new_impl.initialize_original(true);
+		new_impl
 	}
 
-	let mut new_impl = old_impl.clone();
-	new_impl.initialize_original(false);
-	new_impl.mark_coplanar();
-	new_impl.initialize_original(true);
-	new_impl
-}
-
-///Move this Manifold in space. This operation can be chained. Transforms are
-///combined and applied lazily.
-///
-///@param v The vector to add to every vertex.
-pub fn translate(r#impl: &Impl, v: Point3<f64>) -> Impl {
-	let mut transform = Matrix3x4::<f64>::identity();
-	*transform.column_mut(3) = *v;
-	r#impl.transform(&transform)
-}
-
-///Scale this Manifold in space. This operation can be chained. Transforms are
-///combined and applied lazily.
-///
-///@param v The vector to multiply every vertex by per component.
-pub fn scale(r#impl: &Impl, v: Vector3<f64>) -> Impl {
-	let mut transform = Matrix3x4::<f64>::identity();
-	for i in 0..3 {
-		transform[(i, i)] = v[i];
+	///Move this Manifold in space. This operation can be chained. Transforms are
+	///combined and applied lazily.
+	///
+	///@param v The vector to add to every vertex.
+	pub fn translate(&self, v: Point3<f64>) -> Self {
+		let mut transform = Matrix3x4::<f64>::identity();
+		*transform.column_mut(3) = *v;
+		self.transform(&transform)
 	}
 
-	r#impl.transform(&transform)
-}
+	///Scale this Manifold in space. This operation can be chained. Transforms are
+	///combined and applied lazily.
+	///
+	///@param v The vector to multiply every vertex by per component.
+	pub fn scale(&self, v: Vector3<f64>) -> Self {
+		let mut transform = Matrix3x4::<f64>::identity();
+		for i in 0..3 {
+			transform[(i, i)] = v[i];
+		}
 
-///Applies an Euler angle rotation to the manifold, first about the X axis, then
-///Y, then Z, in degrees. We use degrees so that we can minimize rounding error,
-///and eliminate it completely for any multiples of 90 degrees. Additionally,
-///more efficient code paths are used to update the manifold when the transforms
-///only rotate by multiples of 90 degrees. This operation can be chained.
-///Transforms are combined and applied lazily.
-///
-///@param xDegrees First rotation, degrees about the X-axis.
-///@param yDegrees Second rotation, degrees about the Y-axis.
-///@param zDegrees Third rotation, degrees about the Z-axis.
-pub fn rotate(r#impl: &Impl, x_degrees: f64, y_degrees: f64, z_degrees: f64) -> Impl {
-	let transform = UnitQuaternion::from_euler_angles(
-		x_degrees.to_radians(),
-		y_degrees.to_radians(),
-		z_degrees.to_radians(),
-	)
-	.to_homogeneous()
-	.fixed_view::<3, 4>(0, 0)
-	.into_owned();
+		self.transform(&transform)
+	}
 
-	r#impl.transform(&transform)
-}
+	///Applies an Euler angle rotation to the manifold, first about the X axis, then
+	///Y, then Z, in degrees. We use degrees so that we can minimize rounding error,
+	///and eliminate it completely for any multiples of 90 degrees. Additionally,
+	///more efficient code paths are used to update the manifold when the transforms
+	///only rotate by multiples of 90 degrees. This operation can be chained.
+	///Transforms are combined and applied lazily.
+	///
+	///@param xDegrees First rotation, degrees about the X-axis.
+	///@param yDegrees Second rotation, degrees about the Y-axis.
+	///@param zDegrees Third rotation, degrees about the Z-axis.
+	pub fn rotate(&self, x_degrees: f64, y_degrees: f64, z_degrees: f64) -> Self {
+		let transform = UnitQuaternion::from_euler_angles(
+			x_degrees.to_radians(),
+			y_degrees.to_radians(),
+			z_degrees.to_radians(),
+		)
+		.to_homogeneous()
+		.fixed_view::<3, 4>(0, 0)
+		.into_owned();
 
-///Transform this Manifold in space. The first three columns form a 3x3 matrix
-///transform and the last is a translation vector. This operation can be
-///chained. Transforms are combined and applied lazily.
-///
-///@param m The affine transform matrix to apply to all the vertices.
-pub fn transform(r#impl: &Impl, m: &Matrix3x4<f64>) -> Impl {
-	r#impl.transform(&m)
-}
+		self.transform(&transform)
+	}
 
-///	The central operation of this library: the Boolean combines two manifolds
-///	into another by calculating their intersections and removing the unused
-///	portions.
-///	[&epsilon;-valid](https://github.com/elalish/manifold/wiki/Manifold-Library#definition-of-%CE%B5-valid)
-///	inputs will produce &epsilon;-valid output. &epsilon;-invalid input may fail
-///	triangulation.
-///
-///	These operations are optimized to produce nearly-instant results if either
-///	input is empty or their bounding boxes do not overlap.
-///
-///	@param second The other Manifold.
-///	@param op The type of operation to perform.
-pub fn boolean(first: &Impl, second: &Impl, op: OpType) -> Impl {
-	Boolean3::new(first, second, op).result(op)
+	///	The central operation of this library: the Boolean combines two manifolds
+	///	into another by calculating their intersections and removing the unused
+	///	portions.
+	///	[&epsilon;-valid](https://github.com/elalish/manifold/wiki/Manifold-Library#definition-of-%CE%B5-valid)
+	///	inputs will produce &epsilon;-valid output. &epsilon;-invalid input may fail
+	///	triangulation.
+	///
+	///	These operations are optimized to produce nearly-instant results if either
+	///	input is empty or their bounding boxes do not overlap.
+	///
+	///	@param second The other Manifold.
+	///	@param op The type of operation to perform.
+	pub fn boolean(&self, other: &Self, op: OpType) -> Self {
+		Boolean3::new(self, other, op).result(op)
+	}
+
+	///The most complete output of this library, returning a MeshGL that is designed
+	///to easily push into a renderer, including all interleaved vertex properties
+	///that may have been input. It also includes relations to all the input meshes
+	///that form a part of this result and the transforms applied to each.
+	///
+	///@param normalIdx If the original MeshGL inputs that formed this manifold had
+	///properties corresponding to normal vectors, you can specify the first of the
+	///three consecutive property channels forming the (x, y, z) normals, which will
+	///cause this output MeshGL to automatically update these normals according to
+	///the applied transforms and front/back side. normalIdx + 3 must be <=
+	///numProp, and all original MeshGLs must use the same channels for their
+	///normals.
+	pub fn get_mesh_gl(&self, normal_idx: i32) -> MeshGL {
+		let num_prop = self.num_prop();
+		let num_vert = self.num_prop_vert();
+		let num_tri = self.num_tri();
+
+		let is_original = self.mesh_relation.original_id >= 0;
+		let update_normals = !is_original && normal_idx >= 0;
+
+		let out_num_prop: u32 = 3 + num_prop as u32;
+		let tolerance = self
+			.tolerance
+			.max((f32::EPSILON as f64) * self.bbox.scale()) as f32;
+
+		let mut tri_verts: Vec<u32> = vec![0; 3 * num_tri];
+
+		// Sort the triangles into runs
+		let mut face_id: Vec<u32> = vec![0; num_tri];
+		let mut tri_new2old: Vec<_> = (0..num_tri).map(|i| i as i32).collect();
+		let tri_ref = &self.mesh_relation.tri_ref;
+		// Don't sort originals - keep them in order
+		if !is_original {
+			tri_new2old
+				.sort_by_key(|&i| (tri_ref[i as usize].original_id, tri_ref[i as usize].mesh_id));
+		}
+
+		let mut run_index: Vec<u32> = Vec::new();
+		let mut run_original_id: Vec<u32> = Vec::new();
+		let mut run_transform: Vec<f32> = Vec::new();
+
+		let mut run_normal_transform: Vec<Matrix3<f64>> = Vec::new();
+		let mut add_run = |tri, rel: Relation| {
+			run_index.push((3 * tri) as u32);
+			run_original_id.push(rel.original_id as u32);
+			if update_normals {
+				run_normal_transform.push(
+					normal_transform(&rel.transform) * (if rel.back_side { -1.0 } else { 1.0 }),
+				);
+			}
+
+			if !is_original {
+				for col in 0..4 {
+					for row in 0..3 {
+						run_transform.push(rel.transform[(row, col)] as f32)
+					}
+				}
+			}
+		};
+
+		let mut mesh_id_transform = self.mesh_relation.mesh_id_transform.clone();
+		let mut last_id = -1;
+		for tri in 0..num_tri {
+			let old_tri = tri_new2old[tri] as usize;
+			let r#ref = tri_ref[old_tri];
+			let mesh_id = r#ref.mesh_id;
+
+			face_id[tri] = (if r#ref.face_id >= 0 {
+				r#ref.face_id
+			} else {
+				r#ref.coplanar_id
+			}) as u32;
+			for i in 0..3 {
+				tri_verts[3 * tri + i] = self.halfedge[3 * old_tri + i].start_vert as u32;
+			}
+
+			if mesh_id != last_id {
+				let it = mesh_id_transform.remove(&mesh_id);
+				let rel = it.unwrap_or_default();
+				add_run(tri, rel);
+				last_id = mesh_id;
+			}
+		}
+
+		// Add runs for originals that did not contribute any faces to the output
+		for pair in mesh_id_transform {
+			add_run(num_tri, pair.1);
+		}
+
+		run_index.push((3 * num_tri) as u32);
+
+		// Early return for no props
+		if num_prop == 0 {
+			let mut vert_properties: Vec<f32> = vec![0.0; 3 * num_vert];
+			for i in 0..num_vert {
+				let v = self.vert_pos[i];
+				vert_properties[3 * i] = v.x as f32;
+				vert_properties[3 * i + 1] = v.y as f32;
+				vert_properties[3 * i + 2] = v.z as f32;
+			}
+
+			return MeshGL {
+				num_prop: out_num_prop,
+				vert_properties,
+				tri_verts,
+				merge_from_vert: Vec::default(),
+				merge_to_vert: Vec::default(),
+				run_index,
+				run_original_id,
+				run_transform,
+				face_id,
+				tolerance,
+			};
+		}
+
+		// Duplicate verts with different props
+		let mut vert2idx: Vec<i32> = vec![-1; self.num_vert()];
+		let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); self.num_vert()];
+		let mut vert_properties: Vec<f32> = Vec::with_capacity(num_vert * (out_num_prop as usize));
+
+		let mut merge_from_vert: Vec<u32> = Vec::new();
+		let mut merge_to_vert: Vec<u32> = Vec::new();
+
+		for run in 0..run_original_id.len() {
+			for tri in (run_index[run] / 3)..run_index[run + 1] / 3 {
+				let tri = tri as usize;
+				for i in 0..3 {
+					let prop = self.halfedge[3 * (tri_new2old[tri] as usize) + i].prop_vert;
+					let vert = tri_verts[3 * tri + i] as usize;
+
+					let bin = &mut vert_prop_pair[vert];
+					let mut b_found = false;
+					for b in bin.iter() {
+						if b.x == prop {
+							b_found = true;
+							tri_verts[3 * tri + i] = b.y as u32;
+							break;
+						}
+					}
+
+					if b_found {
+						continue;
+					}
+					let idx = vert_properties.len() / (out_num_prop as usize);
+					tri_verts[3 * tri + i] = idx as u32;
+					bin.push(Vector2::new(prop, idx as i32));
+
+					for p in 0..3 {
+						vert_properties.push(self.vert_pos[vert][p] as f32);
+					}
+					for p in 0..num_prop {
+						vert_properties
+							.push(self.properties[(prop as usize) * num_prop + p] as f32);
+					}
+
+					if update_normals {
+						let mut normal = Vector3::<f64>::default();
+						let start = vert_properties.len() - (out_num_prop as usize);
+						for i in 0..3 {
+							normal[i] =
+								vert_properties[start + 3 + (normal_idx as usize) + i] as f64;
+						}
+
+						normal = (run_normal_transform[run] * normal).normalize();
+						for i in 0..3 {
+							vert_properties[start + 3 + (normal_idx as usize) + i] =
+								normal[i] as f32;
+						}
+					}
+
+					if vert2idx[vert] == -1 {
+						vert2idx[vert] = idx as i32;
+					} else {
+						merge_from_vert.push(idx as u32);
+						merge_to_vert.push(vert2idx[vert] as u32);
+					}
+				}
+			}
+		}
+
+		MeshGL {
+			num_prop: out_num_prop,
+			vert_properties,
+			tri_verts,
+			merge_from_vert,
+			merge_to_vert,
+			run_index,
+			run_original_id,
+			run_transform,
+			face_id,
+			tolerance,
+		}
+	}
 }
 
 impl Add for &Impl {
 	type Output = Impl;
 	fn add(self, rhs: Self) -> Self::Output {
-		boolean(self, rhs, OpType::Add)
+		self.boolean(rhs, OpType::Add)
 	}
 }
 
 impl AddAssign<&Self> for Impl {
 	fn add_assign(&mut self, rhs: &Self) {
-		*self = boolean(self, rhs, OpType::Add);
+		*self = self.boolean(rhs, OpType::Add);
 	}
 }
 
 impl Sub for &Impl {
 	type Output = Impl;
 	fn sub(self, rhs: Self) -> Self::Output {
-		boolean(self, rhs, OpType::Subtract)
+		self.boolean(rhs, OpType::Subtract)
 	}
 }
 
 impl SubAssign<&Self> for Impl {
 	fn sub_assign(&mut self, rhs: &Self) {
-		*self = boolean(self, rhs, OpType::Subtract);
+		*self = self.boolean(rhs, OpType::Subtract);
 	}
 }
 
 impl BitXor for &Impl {
 	type Output = Impl;
 	fn bitxor(self, rhs: Self) -> Self::Output {
-		boolean(self, rhs, OpType::Intersect)
+		self.boolean(rhs, OpType::Intersect)
 	}
 }
 
 impl BitXorAssign<&Self> for Impl {
 	fn bitxor_assign(&mut self, rhs: &Self) {
-		*self = boolean(self, rhs, OpType::Intersect);
+		*self = self.boolean(rhs, OpType::Intersect);
 	}
 }
 
@@ -359,194 +544,4 @@ pub enum ManifoldError {
 	FaceIDWrongLength,
 	MergeIndexOutOfBounds,
 	VertexOutOfBounds,
-}
-
-///The most complete output of this library, returning a MeshGL that is designed
-///to easily push into a renderer, including all interleaved vertex properties
-///that may have been input. It also includes relations to all the input meshes
-///that form a part of this result and the transforms applied to each.
-///
-///@param normalIdx If the original MeshGL inputs that formed this manifold had
-///properties corresponding to normal vectors, you can specify the first of the
-///three consecutive property channels forming the (x, y, z) normals, which will
-///cause this output MeshGL to automatically update these normals according to
-///the applied transforms and front/back side. normalIdx + 3 must be <=
-///numProp, and all original MeshGLs must use the same channels for their
-///normals.
-pub fn get_mesh_gl(r#impl: &Impl, normal_idx: i32) -> MeshGL {
-	let num_prop = r#impl.num_prop();
-	let num_vert = r#impl.num_prop_vert();
-	let num_tri = r#impl.num_tri();
-
-	let is_original = r#impl.mesh_relation.original_id >= 0;
-	let update_normals = !is_original && normal_idx >= 0;
-
-	let out_num_prop: u32 = 3 + num_prop as u32;
-	let tolerance = r#impl
-		.tolerance
-		.max((f32::EPSILON as f64) * r#impl.bbox.scale()) as f32;
-
-	let mut tri_verts: Vec<u32> = vec![0; 3 * num_tri];
-
-	// Sort the triangles into runs
-	let mut face_id: Vec<u32> = vec![0; num_tri];
-	let mut tri_new2old: Vec<_> = (0..num_tri).map(|i| i as i32).collect();
-	let tri_ref = &r#impl.mesh_relation.tri_ref;
-	// Don't sort originals - keep them in order
-	if !is_original {
-		tri_new2old
-			.sort_by_key(|&i| (tri_ref[i as usize].original_id, tri_ref[i as usize].mesh_id));
-	}
-
-	let mut run_index: Vec<u32> = Vec::new();
-	let mut run_original_id: Vec<u32> = Vec::new();
-	let mut run_transform: Vec<f32> = Vec::new();
-
-	let mut run_normal_transform: Vec<Matrix3<f64>> = Vec::new();
-	let mut add_run = |tri, rel: Relation| {
-		run_index.push((3 * tri) as u32);
-		run_original_id.push(rel.original_id as u32);
-		if update_normals {
-			run_normal_transform
-				.push(normal_transform(&rel.transform) * (if rel.back_side { -1.0 } else { 1.0 }));
-		}
-
-		if !is_original {
-			for col in 0..4 {
-				for row in 0..3 {
-					run_transform.push(rel.transform[(row, col)] as f32)
-				}
-			}
-		}
-	};
-
-	let mut mesh_id_transform = r#impl.mesh_relation.mesh_id_transform.clone();
-	let mut last_id = -1;
-	for tri in 0..num_tri {
-		let old_tri = tri_new2old[tri] as usize;
-		let r#ref = tri_ref[old_tri];
-		let mesh_id = r#ref.mesh_id;
-
-		face_id[tri] = (if r#ref.face_id >= 0 {
-			r#ref.face_id
-		} else {
-			r#ref.coplanar_id
-		}) as u32;
-		for i in 0..3 {
-			tri_verts[3 * tri + i] = r#impl.halfedge[3 * old_tri + i].start_vert as u32;
-		}
-
-		if mesh_id != last_id {
-			let it = mesh_id_transform.remove(&mesh_id);
-			let rel = it.unwrap_or_default();
-			add_run(tri, rel);
-			last_id = mesh_id;
-		}
-	}
-
-	// Add runs for originals that did not contribute any faces to the output
-	for pair in mesh_id_transform {
-		add_run(num_tri, pair.1);
-	}
-
-	run_index.push((3 * num_tri) as u32);
-
-	// Early return for no props
-	if num_prop == 0 {
-		let mut vert_properties: Vec<f32> = vec![0.0; 3 * num_vert];
-		for i in 0..num_vert {
-			let v = r#impl.vert_pos[i];
-			vert_properties[3 * i] = v.x as f32;
-			vert_properties[3 * i + 1] = v.y as f32;
-			vert_properties[3 * i + 2] = v.z as f32;
-		}
-
-		return MeshGL {
-			num_prop: out_num_prop,
-			vert_properties,
-			tri_verts,
-			merge_from_vert: Vec::default(),
-			merge_to_vert: Vec::default(),
-			run_index,
-			run_original_id,
-			run_transform,
-			face_id,
-			tolerance,
-		};
-	}
-
-	// Duplicate verts with different props
-	let mut vert2idx: Vec<i32> = vec![-1; r#impl.num_vert()];
-	let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); r#impl.num_vert()];
-	let mut vert_properties: Vec<f32> = Vec::with_capacity(num_vert * (out_num_prop as usize));
-
-	let mut merge_from_vert: Vec<u32> = Vec::new();
-	let mut merge_to_vert: Vec<u32> = Vec::new();
-
-	for run in 0..run_original_id.len() {
-		for tri in (run_index[run] / 3)..run_index[run + 1] / 3 {
-			let tri = tri as usize;
-			for i in 0..3 {
-				let prop = r#impl.halfedge[3 * (tri_new2old[tri] as usize) + i].prop_vert;
-				let vert = tri_verts[3 * tri + i] as usize;
-
-				let bin = &mut vert_prop_pair[vert];
-				let mut b_found = false;
-				for b in bin.iter() {
-					if b.x == prop {
-						b_found = true;
-						tri_verts[3 * tri + i] = b.y as u32;
-						break;
-					}
-				}
-
-				if b_found {
-					continue;
-				}
-				let idx = vert_properties.len() / (out_num_prop as usize);
-				tri_verts[3 * tri + i] = idx as u32;
-				bin.push(Vector2::new(prop, idx as i32));
-
-				for p in 0..3 {
-					vert_properties.push(r#impl.vert_pos[vert][p] as f32);
-				}
-				for p in 0..num_prop {
-					vert_properties.push(r#impl.properties[(prop as usize) * num_prop + p] as f32);
-				}
-
-				if update_normals {
-					let mut normal = Vector3::<f64>::default();
-					let start = vert_properties.len() - (out_num_prop as usize);
-					for i in 0..3 {
-						normal[i] = vert_properties[start + 3 + (normal_idx as usize) + i] as f64;
-					}
-
-					normal = (run_normal_transform[run] * normal).normalize();
-					for i in 0..3 {
-						vert_properties[start + 3 + (normal_idx as usize) + i] = normal[i] as f32;
-					}
-				}
-
-				if vert2idx[vert] == -1 {
-					vert2idx[vert] = idx as i32;
-				} else {
-					merge_from_vert.push(idx as u32);
-					merge_to_vert.push(vert2idx[vert] as u32);
-				}
-			}
-		}
-	}
-
-	MeshGL {
-		num_prop: out_num_prop,
-		vert_properties,
-		tri_verts,
-		merge_from_vert,
-		merge_to_vert,
-		run_index,
-		run_original_id,
-		run_transform,
-		face_id,
-		tolerance,
-	}
 }

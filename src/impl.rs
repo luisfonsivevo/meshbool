@@ -860,7 +860,12 @@ impl Impl {
 		self.status = status;
 	}
 
-	pub(crate) fn transform(&self, transform: &Matrix3x4<f64>) -> Impl {
+	///Transform this Manifold in space. The first three columns form a 3x3 matrix
+	///transform and the last is a translation vector. This operation can be
+	///chained. Transforms are combined and applied lazily.
+	///
+	///@param m The affine transform matrix to apply to all the vertices.
+	pub fn transform(&self, transform: &Matrix3x4<f64>) -> Impl {
 		if *transform == Matrix3x4::identity() {
 			return self.clone();
 		}
