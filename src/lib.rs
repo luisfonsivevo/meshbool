@@ -201,17 +201,15 @@ fn invalid() -> Impl {
 ///than the current tolerance, the current tolerance is used for simplification.
 ///The result will contain a subset of the original verts and all surfaces will
 ///have moved by less than tolerance.
-pub fn simplify(r#impl: &Impl, tolerance: Option<f64>) -> Impl
-{
+pub fn simplify(r#impl: &Impl, tolerance: Option<f64>) -> Impl {
 	let mut r#impl = r#impl.clone();
 	let old_tolerance = r#impl.tolerance;
 	let tolerance = tolerance.unwrap_or(old_tolerance);
-	if tolerance > old_tolerance
-	{
+	if tolerance > old_tolerance {
 		r#impl.tolerance = tolerance;
 		r#impl.mark_coplanar();
 	}
-	
+
 	r#impl.simplify_topology(0);
 	r#impl.finish();
 	r#impl.tolerance = tolerance;
