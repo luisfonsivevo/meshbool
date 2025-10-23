@@ -1,4 +1,4 @@
-use crate::r#impl::Impl;
+use crate::meshboolimpl::MeshBoolImpl;
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use crate::shared::{Halfedge, TriRef, get_axis_aligned_projection};
 use crate::utils::ccw;
@@ -68,7 +68,7 @@ fn project_polygons(
 	polygons
 }
 
-impl Impl {
+impl MeshBoolImpl {
 	///Triangulates the faces. In this case, the halfedge_ vector is not yet a set
 	///of triangles as required by this data structure, but is instead a set of
 	///general faces with the input faceEdge vector having length of the number of

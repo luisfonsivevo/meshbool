@@ -1,9 +1,9 @@
 use crate::common::{Polygons, Quality, SimplePolygon};
-use crate::r#impl::{Impl, Shape};
+use crate::meshboolimpl::{MeshBoolImpl, Shape};
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector3};
 
-impl Impl {
+impl MeshBoolImpl {
 	///Constructs a unit cube (edge lengths all one), by default in the first
 	///octant, touching the origin. If any dimensions in size are negative, or if
 	///all are zero, an empty Manifold will be returned.
@@ -196,15 +196,15 @@ impl Impl {
 			}
 		}
 
-		let mut r#impl = Self {
+		let mut meshbool_impl = Self {
 			vert_pos,
 			..Self::default()
 		};
 
-		r#impl.create_halfedges(tri_verts, Vec::new());
-		r#impl.finish();
-		r#impl.initialize_original(false);
-		r#impl.mark_coplanar();
-		r#impl
+		meshbool_impl.create_halfedges(tri_verts, Vec::new());
+		meshbool_impl.finish();
+		meshbool_impl.initialize_original(false);
+		meshbool_impl.mark_coplanar();
+		meshbool_impl
 	}
 }

@@ -1,4 +1,4 @@
-use crate::r#impl::Impl;
+use crate::meshboolimpl::MeshBoolImpl;
 use crate::shared::{Halfedge, get_axis_aligned_projection, next_halfedge};
 use crate::utils::ccw;
 use nalgebra::{Point2, Point3, Vector3, distance};
@@ -23,14 +23,14 @@ fn is_01_longest(v0: Point2<f64>, v1: Point2<f64>, v2: Point2<f64>) -> bool {
 }
 
 struct ShortEdge<'a> {
-	r#impl: &'a mut Impl,
+	meshbool_impl: &'a mut MeshBoolImpl,
 	epsilon: f64,
 	first_new_vert: i32,
 }
 
 impl<'a> Pred for ShortEdge<'a> {
 	fn call(&self, edge: usize) -> bool {
-		let half = &self.r#impl.halfedge[edge];
+		let half = &self.meshbool_impl.halfedge[edge];
 		if half.paired_halfedge < 0
 			|| (half.start_vert < self.first_new_vert && half.end_vert < self.first_new_vert)
 		{
@@ -38,37 +38,37 @@ impl<'a> Pred for ShortEdge<'a> {
 		}
 
 		// Flag short edges
-		let delta = self.r#impl.vert_pos[half.end_vert as usize]
-			- self.r#impl.vert_pos[half.start_vert as usize];
+		let delta = self.meshbool_impl.vert_pos[half.end_vert as usize]
+			- self.meshbool_impl.vert_pos[half.start_vert as usize];
 		delta.magnitude_squared() < self.epsilon.powi(2)
 	}
 
-	fn get_impl(&mut self) -> &mut Impl {
-		self.r#impl
+	fn get_impl(&mut self) -> &mut MeshBoolImpl {
+		self.meshbool_impl
 	}
 }
 
 struct FlagEdge<'a> {
-	r#impl: &'a mut Impl,
+	meshbool_impl: &'a mut MeshBoolImpl,
 	first_new_vert: i32,
 }
 
 impl<'a> Pred for FlagEdge<'a> {
 	fn call(&self, edge: usize) -> bool {
-		let half = &self.r#impl.halfedge[edge];
+		let half = &self.meshbool_impl.halfedge[edge];
 		if half.paired_halfedge < 0 || half.start_vert < self.first_new_vert {
 			return false;
 		}
 		// Flag redundant edges - those where the startVert is surrounded by only
 		// two original triangles.
-		let ref0 = self.r#impl.mesh_relation.tri_ref[edge / 3];
+		let ref0 = self.meshbool_impl.mesh_relation.tri_ref[edge / 3];
 		let mut current = next_halfedge(half.paired_halfedge) as usize;
-		let mut ref1 = self.r#impl.mesh_relation.tri_ref[current / 3];
+		let mut ref1 = self.meshbool_impl.mesh_relation.tri_ref[current / 3];
 		let mut ref1_updated = !ref0.same_face(&ref1);
 		while current != edge {
-			current = next_halfedge(self.r#impl.halfedge[current].paired_halfedge) as usize;
+			current = next_halfedge(self.meshbool_impl.halfedge[current].paired_halfedge) as usize;
 			let tri = current / 3;
-			let r#ref = self.r#impl.mesh_relation.tri_ref[tri];
+			let r#ref = self.meshbool_impl.mesh_relation.tri_ref[tri];
 			if !r#ref.same_face(&ref0) && !r#ref.same_face(&ref1) {
 				if !ref1_updated {
 					ref1 = r#ref;
@@ -82,13 +82,13 @@ impl<'a> Pred for FlagEdge<'a> {
 		true
 	}
 
-	fn get_impl(&mut self) -> &mut Impl {
-		self.r#impl
+	fn get_impl(&mut self) -> &mut MeshBoolImpl {
+		self.meshbool_impl
 	}
 }
 
 struct SwappableEdge<'a> {
-	r#impl: &'a mut Impl,
+	meshbool_impl: &'a mut MeshBoolImpl,
 	tolerance: f64,
 	first_new_vert: i32,
 }
@@ -96,14 +96,15 @@ struct SwappableEdge<'a> {
 impl<'a> Pred for SwappableEdge<'a> {
 	fn call(&self, edge: usize) -> bool {
 		let mut edge = edge as i32;
-		let half = &self.r#impl.halfedge[edge as usize];
+		let half = &self.meshbool_impl.halfedge[edge as usize];
 		if half.paired_halfedge < 0 {
 			return false;
 		}
 		if half.start_vert < self.first_new_vert
 			&& half.end_vert < self.first_new_vert
-			&& self.r#impl.halfedge[next_halfedge(edge) as usize].end_vert < self.first_new_vert
-			&& self.r#impl.halfedge[next_halfedge(half.paired_halfedge) as usize].end_vert
+			&& self.meshbool_impl.halfedge[next_halfedge(edge) as usize].end_vert
+				< self.first_new_vert
+			&& self.meshbool_impl.halfedge[next_halfedge(half.paired_halfedge) as usize].end_vert
 				< self.first_new_vert
 		{
 			return false;
@@ -111,12 +112,13 @@ impl<'a> Pred for SwappableEdge<'a> {
 
 		let mut tri = edge / 3;
 		let mut tri_edge = tri_of(edge);
-		let mut projection = get_axis_aligned_projection(self.r#impl.face_normal[tri as usize]);
+		let mut projection =
+			get_axis_aligned_projection(self.meshbool_impl.face_normal[tri as usize]);
 		let mut v = [Point2::<f64>::default(); 3];
 		for i in 0..3 {
 			v[i] = projection
-				* self.r#impl.vert_pos
-					[self.r#impl.halfedge[tri_edge[i] as usize].start_vert as usize];
+				* self.meshbool_impl.vert_pos
+					[self.meshbool_impl.halfedge[tri_edge[i] as usize].start_vert as usize];
 		}
 		if ccw(v[0], v[1], v[2], self.tolerance) > 0 || !is_01_longest(v[0], v[1], v[2]) {
 			return false;
@@ -126,24 +128,24 @@ impl<'a> Pred for SwappableEdge<'a> {
 		edge = half.paired_halfedge;
 		tri = edge / 3;
 		tri_edge = tri_of(edge);
-		projection = get_axis_aligned_projection(self.r#impl.face_normal[tri as usize]);
+		projection = get_axis_aligned_projection(self.meshbool_impl.face_normal[tri as usize]);
 		for i in 0..3 {
 			v[i] = projection
-				* self.r#impl.vert_pos
-					[self.r#impl.halfedge[tri_edge[i] as usize].start_vert as usize];
+				* self.meshbool_impl.vert_pos
+					[self.meshbool_impl.halfedge[tri_edge[i] as usize].start_vert as usize];
 		}
 
 		ccw(v[0], v[1], v[2], self.tolerance) > 0 || is_01_longest(v[0], v[1], v[2])
 	}
 
-	fn get_impl(&mut self) -> &mut Impl {
-		self.r#impl
+	fn get_impl(&mut self) -> &mut MeshBoolImpl {
+		self.meshbool_impl
 	}
 }
 
 trait Pred {
 	fn call(&self, edge: usize) -> bool;
-	fn get_impl(&mut self) -> &mut Impl;
+	fn get_impl(&mut self) -> &mut MeshBoolImpl;
 }
 
 #[derive(Default)]
@@ -154,7 +156,7 @@ struct FlagStore {
 impl FlagStore {
 	fn run_seq<F>(&mut self, n: usize, mut pred: impl Pred, mut f: F)
 	where
-		F: FnMut(&mut Impl, usize),
+		F: FnMut(&mut MeshBoolImpl, usize),
 	{
 		for i in 0..n {
 			if pred.call(i) {
@@ -169,13 +171,13 @@ impl FlagStore {
 
 	fn run<F>(&mut self, n: usize, pred: impl Pred, f: F)
 	where
-		F: FnMut(&mut Impl, usize),
+		F: FnMut(&mut MeshBoolImpl, usize),
 	{
 		self.run_seq(n, pred, f);
 	}
 }
 
-impl Impl {
+impl MeshBoolImpl {
 	///Duplicates just enough verts to covert an even-manifold to a proper
 	///2-manifold, splitting non-manifold verts and edges with too many triangles.
 	pub(crate) fn cleanup_topology(&mut self) {
@@ -244,7 +246,7 @@ impl Impl {
 		// restricted to epsilon, rather than tolerance.
 		let epsilon = self.epsilon;
 		let se = ShortEdge {
-			r#impl: self,
+			meshbool_impl: self,
 			epsilon,
 			first_new_vert: first_new_vert,
 		};
@@ -272,7 +274,7 @@ impl Impl {
 			// local check, but by the global MarkCoplanar function, which keeps this
 			// from being vulnerable to error stacking.
 			let se = FlagEdge {
-				r#impl: self,
+				meshbool_impl: self,
 				first_new_vert,
 			};
 
@@ -300,7 +302,7 @@ impl Impl {
 		let tolerance = self.tolerance;
 		let he_len = self.halfedge.len();
 		let se = SwappableEdge {
-			r#impl: self,
+			meshbool_impl: self,
 			tolerance,
 			first_new_vert,
 		};
@@ -772,7 +774,7 @@ impl Impl {
 
 		v[3] = projection * self.vert_pos[self.halfedge[tri1_edge[2] as usize].start_vert as usize];
 
-		let swap_edge = |myself: &mut Impl| {
+		let swap_edge = |myself: &mut MeshBoolImpl| {
 			// The 0-verts are swapped to the opposite 2-verts.
 			let v0 = myself.halfedge[tri0_edge[2] as usize].start_vert;
 			let v1 = myself.halfedge[tri1_edge[2] as usize].start_vert;

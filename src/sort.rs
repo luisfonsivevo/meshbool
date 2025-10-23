@@ -1,7 +1,7 @@
 use crate::ManifoldError;
 use crate::collider::Collider;
 use crate::common::AABB;
-use crate::r#impl::Impl;
+use crate::meshboolimpl::MeshBoolImpl;
 use crate::parallel::{inclusive_scan, scatter};
 use crate::utils::permute;
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
@@ -20,7 +20,7 @@ fn morton_code(position: Point3<f64>, bbox: AABB) -> u32 {
 	}
 }
 
-impl Impl {
+impl MeshBoolImpl {
 	///Once halfedge_ has been filled in, this function can be called to create the
 	///rest of the internal data structures. This function also removes the verts
 	///and halfedges flagged for removal (NaN verts and -1 halfedges).

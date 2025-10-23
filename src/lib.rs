@@ -1,7 +1,7 @@
 use crate::boolean3::Boolean3;
 pub use crate::common::OpType;
-pub use crate::r#impl::Impl;
-use crate::r#impl::Relation;
+pub use crate::meshboolimpl::MeshBoolImpl;
+use crate::meshboolimpl::Relation;
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
@@ -14,8 +14,8 @@ mod constructors;
 mod disjoint_sets;
 mod edge_op;
 mod face_op;
-pub mod r#impl;
 mod mesh_fixes;
+pub mod meshboolimpl;
 mod parallel;
 mod polygon;
 mod properties;
@@ -30,8 +30,8 @@ fn test() {
 	use nalgebra::Vector3;
 
 	//just make sure it don't crash at the sight of the simplest shapes
-	let cube1 = Impl::cube(Vector3::new(1.0, 1.0, 1.0), true);
-	let cube2 = Impl::cube(Vector3::new(1.0, 1.0, 1.0), false);
+	let cube1 = MeshBoolImpl::cube(Vector3::new(1.0, 1.0, 1.0), true);
+	let cube2 = MeshBoolImpl::cube(Vector3::new(1.0, 1.0, 1.0), false);
 
 	let union = &cube1 + &cube2;
 	println!("{:?}", union.get_mesh_gl(0));
@@ -188,11 +188,11 @@ impl MeshGL {
 	}
 }
 
-impl Impl {
+impl MeshBoolImpl {
 	fn invalid() -> Self {
-		let mut r#impl = Self::default();
-		r#impl.status = ManifoldError::InvalidConstruction;
-		r#impl
+		let mut meshbool_impl = Self::default();
+		meshbool_impl.status = ManifoldError::InvalidConstruction;
+		meshbool_impl
 	}
 
 	///Return a copy of the manifold simplified to the given tolerance, but with its
@@ -201,18 +201,18 @@ impl Impl {
 	///The result will contain a subset of the original verts and all surfaces will
 	///have moved by less than tolerance.
 	pub fn simplify(&self, tolerance: Option<f64>) -> Self {
-		let mut r#impl = self.clone();
-		let old_tolerance = r#impl.tolerance;
+		let mut meshbool_impl = self.clone();
+		let old_tolerance = meshbool_impl.tolerance;
 		let tolerance = tolerance.unwrap_or(old_tolerance);
 		if tolerance > old_tolerance {
-			r#impl.tolerance = tolerance;
-			r#impl.mark_coplanar();
+			meshbool_impl.tolerance = tolerance;
+			meshbool_impl.mark_coplanar();
 		}
 
-		r#impl.simplify_topology(0);
-		r#impl.finish();
-		r#impl.tolerance = tolerance;
-		r#impl
+		meshbool_impl.simplify_topology(0);
+		meshbool_impl.finish();
+		meshbool_impl.tolerance = tolerance;
+		meshbool_impl
 	}
 
 	///This removes all relations (originalID, faceID, transform) to ancestor meshes
@@ -491,40 +491,40 @@ impl Impl {
 	}
 }
 
-impl Add for &Impl {
-	type Output = Impl;
+impl Add for &MeshBoolImpl {
+	type Output = MeshBoolImpl;
 	fn add(self, rhs: Self) -> Self::Output {
 		self.boolean(rhs, OpType::Add)
 	}
 }
 
-impl AddAssign<&Self> for Impl {
+impl AddAssign<&Self> for MeshBoolImpl {
 	fn add_assign(&mut self, rhs: &Self) {
 		*self = self.boolean(rhs, OpType::Add);
 	}
 }
 
-impl Sub for &Impl {
-	type Output = Impl;
+impl Sub for &MeshBoolImpl {
+	type Output = MeshBoolImpl;
 	fn sub(self, rhs: Self) -> Self::Output {
 		self.boolean(rhs, OpType::Subtract)
 	}
 }
 
-impl SubAssign<&Self> for Impl {
+impl SubAssign<&Self> for MeshBoolImpl {
 	fn sub_assign(&mut self, rhs: &Self) {
 		*self = self.boolean(rhs, OpType::Subtract);
 	}
 }
 
-impl BitXor for &Impl {
-	type Output = Impl;
+impl BitXor for &MeshBoolImpl {
+	type Output = MeshBoolImpl;
 	fn bitxor(self, rhs: Self) -> Self::Output {
 		self.boolean(rhs, OpType::Intersect)
 	}
 }
 
-impl BitXorAssign<&Self> for Impl {
+impl BitXorAssign<&Self> for MeshBoolImpl {
 	fn bitxor_assign(&mut self, rhs: &Self) {
 		*self = self.boolean(rhs, OpType::Intersect);
 	}
