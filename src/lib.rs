@@ -30,8 +30,8 @@ fn test() {
 	use nalgebra::Vector3;
 
 	//just make sure it don't crash at the sight of the simplest shapes
-	let cube1 = MeshBoolImpl::cube(Vector3::new(1.0, 1.0, 1.0), true);
-	let cube2 = MeshBoolImpl::cube(Vector3::new(1.0, 1.0, 1.0), false);
+	let cube1 = MeshBool::cube(Vector3::new(1.0, 1.0, 1.0), true);
+	let cube2 = MeshBool::cube(Vector3::new(1.0, 1.0, 1.0), false);
 
 	let union = &cube1 + &cube2;
 	println!("{:?}", union.get_mesh_gl(0));
@@ -188,11 +188,16 @@ impl MeshGL {
 	}
 }
 
-impl MeshBoolImpl {
+#[derive(Default)]
+pub struct MeshBool {
+	meshbool_impl: MeshBoolImpl,
+}
+
+impl MeshBool {
 	fn invalid() -> Self {
-		let mut meshbool_impl = Self::default();
-		meshbool_impl.status = ManifoldError::InvalidConstruction;
-		meshbool_impl
+		let mut meshbool = Self::default();
+		meshbool.meshbool_impl.status = ManifoldError::InvalidConstruction;
+		meshbool
 	}
 
 	///Return a copy of the manifold simplified to the given tolerance, but with its
@@ -201,7 +206,7 @@ impl MeshBoolImpl {
 	///The result will contain a subset of the original verts and all surfaces will
 	///have moved by less than tolerance.
 	pub fn simplify(&self, tolerance: Option<f64>) -> Self {
-		let mut meshbool_impl = self.clone();
+		let mut meshbool_impl = self.meshbool_impl.clone();
 		let old_tolerance = meshbool_impl.tolerance;
 		let tolerance = tolerance.unwrap_or(old_tolerance);
 		if tolerance > old_tolerance {
@@ -212,7 +217,7 @@ impl MeshBoolImpl {
 		meshbool_impl.simplify_topology(0);
 		meshbool_impl.finish();
 		meshbool_impl.tolerance = tolerance;
-		meshbool_impl
+		Self::from(meshbool_impl)
 	}
 
 	///This removes all relations (originalID, faceID, transform) to ancestor meshes
@@ -221,17 +226,18 @@ impl MeshBoolImpl {
 	///reset may allow triangles of flat faces to be further collapsed with
 	///Simplify().
 	pub fn as_original(&self) -> Self {
-		if self.status != ManifoldError::NoError {
-			let mut new_impl = Self::default();
-			new_impl.status = self.status;
-			return new_impl;
+		let old_impl = &self.meshbool_impl;
+		if old_impl.status != ManifoldError::NoError {
+			let mut new_impl = MeshBoolImpl::default();
+			new_impl.status = old_impl.status;
+			return Self::from(new_impl);
 		}
 
-		let mut new_impl = self.clone();
+		let mut new_impl = self.meshbool_impl.clone();
 		new_impl.initialize_original(false);
 		new_impl.mark_coplanar();
 		new_impl.initialize_original(true);
-		new_impl
+		Self::from(new_impl)
 	}
 
 	///Move this Manifold in space. This operation can be chained. Transforms are
@@ -241,7 +247,7 @@ impl MeshBoolImpl {
 	pub fn translate(&self, v: Point3<f64>) -> Self {
 		let mut transform = Matrix3x4::<f64>::identity();
 		*transform.column_mut(3) = *v;
-		self.transform(&transform)
+		Self::from(self.meshbool_impl.transform(&transform))
 	}
 
 	///Scale this Manifold in space. This operation can be chained. Transforms are
@@ -254,7 +260,7 @@ impl MeshBoolImpl {
 			transform[(i, i)] = v[i];
 		}
 
-		self.transform(&transform)
+		Self::from(self.meshbool_impl.transform(&transform))
 	}
 
 	///Applies an Euler angle rotation to the manifold, first about the X axis, then
@@ -277,7 +283,16 @@ impl MeshBoolImpl {
 		.fixed_view::<3, 4>(0, 0)
 		.into_owned();
 
-		self.transform(&transform)
+		Self::from(self.meshbool_impl.transform(&transform))
+	}
+
+	///Transform this Manifold in space. The first three columns form a 3x3 matrix
+	///transform and the last is a translation vector. This operation can be
+	///chained. Transforms are combined and applied lazily.
+	///
+	///@param m The affine transform matrix to apply to all the vertices.
+	pub fn transform(&self, m: &Matrix3x4<f64>) -> Self {
+		Self::from(self.meshbool_impl.transform(&m))
 	}
 
 	///	The central operation of this library: the Boolean combines two manifolds
@@ -293,7 +308,7 @@ impl MeshBoolImpl {
 	///	@param second The other Manifold.
 	///	@param op The type of operation to perform.
 	pub fn boolean(&self, other: &Self, op: OpType) -> Self {
-		Boolean3::new(self, other, op).result(op)
+		Self::from(Boolean3::new(&self.meshbool_impl, &other.meshbool_impl, op).result(op))
 	}
 
 	///The most complete output of this library, returning a MeshGL that is designed
@@ -308,25 +323,25 @@ impl MeshBoolImpl {
 	///the applied transforms and front/back side. normalIdx + 3 must be <=
 	///numProp, and all original MeshGLs must use the same channels for their
 	///normals.
-	pub fn get_mesh_gl(&self, normal_idx: i32) -> MeshGL {
-		let num_prop = self.num_prop();
-		let num_vert = self.num_prop_vert();
-		let num_tri = self.num_tri();
+	pub fn get_mesh_gl_internal(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGL {
+		let num_prop = meshbool_impl.num_prop();
+		let num_vert = meshbool_impl.num_prop_vert();
+		let num_tri = meshbool_impl.num_tri();
 
-		let is_original = self.mesh_relation.original_id >= 0;
+		let is_original = meshbool_impl.mesh_relation.original_id >= 0;
 		let update_normals = !is_original && normal_idx >= 0;
 
 		let out_num_prop: u32 = 3 + num_prop as u32;
-		let tolerance = self
+		let tolerance = meshbool_impl
 			.tolerance
-			.max((f32::EPSILON as f64) * self.bbox.scale()) as f32;
+			.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale()) as f32;
 
 		let mut tri_verts: Vec<u32> = vec![0; 3 * num_tri];
 
 		// Sort the triangles into runs
 		let mut face_id: Vec<u32> = vec![0; num_tri];
 		let mut tri_new2old: Vec<_> = (0..num_tri).map(|i| i as i32).collect();
-		let tri_ref = &self.mesh_relation.tri_ref;
+		let tri_ref = &meshbool_impl.mesh_relation.tri_ref;
 		// Don't sort originals - keep them in order
 		if !is_original {
 			tri_new2old
@@ -356,7 +371,7 @@ impl MeshBoolImpl {
 			}
 		};
 
-		let mut mesh_id_transform = self.mesh_relation.mesh_id_transform.clone();
+		let mut mesh_id_transform = meshbool_impl.mesh_relation.mesh_id_transform.clone();
 		let mut last_id = -1;
 		for tri in 0..num_tri {
 			let old_tri = tri_new2old[tri] as usize;
@@ -369,7 +384,7 @@ impl MeshBoolImpl {
 				r#ref.coplanar_id
 			}) as u32;
 			for i in 0..3 {
-				tri_verts[3 * tri + i] = self.halfedge[3 * old_tri + i].start_vert as u32;
+				tri_verts[3 * tri + i] = meshbool_impl.halfedge[3 * old_tri + i].start_vert as u32;
 			}
 
 			if mesh_id != last_id {
@@ -391,7 +406,7 @@ impl MeshBoolImpl {
 		if num_prop == 0 {
 			let mut vert_properties: Vec<f32> = vec![0.0; 3 * num_vert];
 			for i in 0..num_vert {
-				let v = self.vert_pos[i];
+				let v = meshbool_impl.vert_pos[i];
 				vert_properties[3 * i] = v.x as f32;
 				vert_properties[3 * i + 1] = v.y as f32;
 				vert_properties[3 * i + 2] = v.z as f32;
@@ -412,8 +427,8 @@ impl MeshBoolImpl {
 		}
 
 		// Duplicate verts with different props
-		let mut vert2idx: Vec<i32> = vec![-1; self.num_vert()];
-		let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); self.num_vert()];
+		let mut vert2idx: Vec<i32> = vec![-1; meshbool_impl.num_vert()];
+		let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); meshbool_impl.num_vert()];
 		let mut vert_properties: Vec<f32> = Vec::with_capacity(num_vert * (out_num_prop as usize));
 
 		let mut merge_from_vert: Vec<u32> = Vec::new();
@@ -423,7 +438,8 @@ impl MeshBoolImpl {
 			for tri in (run_index[run] / 3)..run_index[run + 1] / 3 {
 				let tri = tri as usize;
 				for i in 0..3 {
-					let prop = self.halfedge[3 * (tri_new2old[tri] as usize) + i].prop_vert;
+					let prop =
+						meshbool_impl.halfedge[3 * (tri_new2old[tri] as usize) + i].prop_vert;
 					let vert = tri_verts[3 * tri + i] as usize;
 
 					let bin = &mut vert_prop_pair[vert];
@@ -444,11 +460,11 @@ impl MeshBoolImpl {
 					bin.push(Vector2::new(prop, idx as i32));
 
 					for p in 0..3 {
-						vert_properties.push(self.vert_pos[vert][p] as f32);
+						vert_properties.push(meshbool_impl.vert_pos[vert][p] as f32);
 					}
 					for p in 0..num_prop {
 						vert_properties
-							.push(self.properties[(prop as usize) * num_prop + p] as f32);
+							.push(meshbool_impl.properties[(prop as usize) * num_prop + p] as f32);
 					}
 
 					if update_normals {
@@ -489,42 +505,58 @@ impl MeshBoolImpl {
 			tolerance,
 		}
 	}
+
+	pub fn get_mesh_gl(&self, normal_idx: i32) -> MeshGL {
+		Self::get_mesh_gl_internal(&self.meshbool_impl, normal_idx)
+	}
+
+	pub fn from_meshgl(mesh_gl: MeshGL) -> Self {
+		Self::from(MeshBoolImpl::from_meshgl(mesh_gl))
+	}
 }
 
-impl Add for &MeshBoolImpl {
-	type Output = MeshBoolImpl;
+impl From<MeshBoolImpl> for MeshBool {
+	fn from(value: MeshBoolImpl) -> Self {
+		Self {
+			meshbool_impl: value,
+		}
+	}
+}
+
+impl Add for &MeshBool {
+	type Output = MeshBool;
 	fn add(self, rhs: Self) -> Self::Output {
 		self.boolean(rhs, OpType::Add)
 	}
 }
 
-impl AddAssign<&Self> for MeshBoolImpl {
+impl AddAssign<&Self> for MeshBool {
 	fn add_assign(&mut self, rhs: &Self) {
 		*self = self.boolean(rhs, OpType::Add);
 	}
 }
 
-impl Sub for &MeshBoolImpl {
-	type Output = MeshBoolImpl;
+impl Sub for &MeshBool {
+	type Output = MeshBool;
 	fn sub(self, rhs: Self) -> Self::Output {
 		self.boolean(rhs, OpType::Subtract)
 	}
 }
 
-impl SubAssign<&Self> for MeshBoolImpl {
+impl SubAssign<&Self> for MeshBool {
 	fn sub_assign(&mut self, rhs: &Self) {
 		*self = self.boolean(rhs, OpType::Subtract);
 	}
 }
 
-impl BitXor for &MeshBoolImpl {
-	type Output = MeshBoolImpl;
+impl BitXor for &MeshBool {
+	type Output = MeshBool;
 	fn bitxor(self, rhs: Self) -> Self::Output {
 		self.boolean(rhs, OpType::Intersect)
 	}
 }
 
-impl BitXorAssign<&Self> for MeshBoolImpl {
+impl BitXorAssign<&Self> for MeshBool {
 	fn bitxor_assign(&mut self, rhs: &Self) {
 		*self = self.boolean(rhs, OpType::Intersect);
 	}

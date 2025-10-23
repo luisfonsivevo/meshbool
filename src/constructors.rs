@@ -1,9 +1,10 @@
+use crate::MeshBool;
 use crate::common::{Polygons, Quality, SimplePolygon};
 use crate::meshboolimpl::{MeshBoolImpl, Shape};
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector3};
 
-impl MeshBoolImpl {
+impl MeshBool {
 	///Constructs a unit cube (edge lengths all one), by default in the first
 	///octant, touching the origin. If any dimensions in size are negative, or if
 	///all are zero, an empty Manifold will be returned.
@@ -26,7 +27,7 @@ impl MeshBoolImpl {
 			},
 		]);
 
-		Self::from_shape(Shape::Cube, m)
+		Self::from(MeshBoolImpl::from_shape(Shape::Cube, m))
 	}
 
 	///A convenience constructor for the common case of extruding a circle. Can also
@@ -196,15 +197,15 @@ impl MeshBoolImpl {
 			}
 		}
 
-		let mut meshbool_impl = Self {
+		let mut meshbool_impl = MeshBoolImpl {
 			vert_pos,
-			..Self::default()
+			..Default::default()
 		};
 
 		meshbool_impl.create_halfedges(tri_verts, Vec::new());
 		meshbool_impl.finish();
 		meshbool_impl.initialize_original(false);
 		meshbool_impl.mark_coplanar();
-		meshbool_impl
+		Self::from(meshbool_impl)
 	}
 }
