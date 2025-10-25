@@ -4,21 +4,21 @@
 
 Meshbool is a pure-Rust implementation/port of Manifold's state of the art **mesh boolean algorithm**, known for its guarantee that, given manifold input, will always produce manifold output: solid, watertight, correct. It enables robust [CSG (Constructive Solid Geometry) operations](https://en.wikipedia.org/wiki/Constructive_solid_geometry) on 3D models.
 
-This repo is up to date with [this Manifold commit](https://github.com/elalish/manifold/tree/34da5f0629f52052f7339698f1bb96dd483601c4).
+This repo is up to date with [this Manifold commit](https://github.com/elalish/manifold/tree/f6005ffa83832b845c4c7e3b32fc4358cd0f7248).
 
 ### Example:
 
 ```Rust
 //note you currently need the nalgebra crate to construct these linear algebra objects
-let cube1 = meshbool::cube(Vector3::new(1.0, 1.0, 1.0), true);
-let cube2 = meshbool::cube(Vector3::new(1.0, 1.0, 1.0), false);
+let cube1 = MeshBool::cube(Vector3::new(1.0, 1.0, 1.0), true);
+let cube2 = MeshBool::cube(Vector3::new(1.0, 1.0, 1.0), false);
 
 let union = &cube1 + &cube2;
 let difference = &cube1 - &cube2;
 let intersection = &cube1 ^ &cube2;
 
 //now convert the output into a format suitable for rendering
-let mesh = meshbool::get_mesh_gl(&union, 0);
+let mesh = union.get_mesh_gl(0);
 ```
 
 ```TOML

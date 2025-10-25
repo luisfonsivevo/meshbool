@@ -46,7 +46,7 @@ pub(crate) static MESH_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 ///properties are not mixed, there is no requirement that channels have
 ///consistent meaning between different inputs.
 #[derive(Clone, Debug)]
-pub struct Impl {
+pub struct MeshBoolImpl {
 	pub bbox: AABB,
 	pub epsilon: f64,
 	pub tolerance: f64,
@@ -98,7 +98,7 @@ impl Default for Relation {
 	}
 }
 
-impl Impl {
+impl MeshBoolImpl {
 	pub fn is_empty(&self) -> bool {
 		self.num_tri() == 0
 	}
@@ -173,7 +173,7 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 	}
 }
 
-impl Impl {
+impl MeshBoolImpl {
 	pub fn from_meshgl(mesh_gl: MeshGL) -> Self {
 		let num_vert = mesh_gl.num_vert();
 		let num_tri = mesh_gl.num_tri();
@@ -297,7 +297,7 @@ impl Impl {
 			run_index.push(run_end as u32);
 		}
 
-		let start_id = Impl::reserve_ids(1.max(mesh_gl.run_original_id.len()));
+		let start_id = MeshBoolImpl::reserve_ids(1.max(mesh_gl.run_original_id.len()));
 		let mut run_original_id = mesh_gl.run_original_id;
 		if run_original_id.is_empty() {
 			run_original_id.push(start_id as u32);
@@ -483,17 +483,17 @@ impl Impl {
 			v.coords = m * v.coords.push(1.0);
 		}
 
-		let mut r#impl = Self {
+		let mut meshbool_impl = Self {
 			vert_pos,
-			..Impl::default()
+			..MeshBoolImpl::default()
 		};
 
-		r#impl.create_halfedges(tri_verts, Vec::new());
-		r#impl.finish();
-		r#impl.initialize_original(false);
-		r#impl.mark_coplanar();
+		meshbool_impl.create_halfedges(tri_verts, Vec::new());
+		meshbool_impl.finish();
+		meshbool_impl.initialize_original(false);
+		meshbool_impl.mark_coplanar();
 
-		r#impl
+		meshbool_impl
 	}
 
 	pub(crate) fn remove_unreferenced_verts(&mut self) {
@@ -519,7 +519,7 @@ impl Impl {
 	}
 
 	pub(crate) fn initialize_original(&mut self, keep_face_id: bool) {
-		let mesh_id = Impl::reserve_ids(1) as i32;
+		let mesh_id = MeshBoolImpl::reserve_ids(1) as i32;
 		self.mesh_relation.original_id = mesh_id;
 		let num_tri = self.num_tri();
 		let tri_ref = &mut self.mesh_relation.tri_ref;
@@ -860,11 +860,16 @@ impl Impl {
 		self.status = status;
 	}
 
-	pub(crate) fn transform(&self, transform: &Matrix3x4<f64>) -> Impl {
+	///Transform this Manifold in space. The first three columns form a 3x3 matrix
+	///transform and the last is a translation vector. This operation can be
+	///chained. Transforms are combined and applied lazily.
+	///
+	///@param m The affine transform matrix to apply to all the vertices.
+	pub fn transform(&self, transform: &Matrix3x4<f64>) -> MeshBoolImpl {
 		if *transform == Matrix3x4::identity() {
 			return self.clone();
 		}
-		let mut result = Impl::default();
+		let mut result = MeshBoolImpl::default();
 		if self.status != ManifoldError::NoError {
 			result.status = self.status;
 			return result;
@@ -1060,7 +1065,7 @@ impl Impl {
 			HashMap::with_capacity(self.mesh_relation.mesh_id_transform.len() * 2);
 		let old_transforms = mem::take(&mut self.mesh_relation.mesh_id_transform);
 		let num_mesh_ids = old_transforms.len();
-		let mut next_mesh_id = Impl::reserve_ids(num_mesh_ids) as i32;
+		let mut next_mesh_id = MeshBoolImpl::reserve_ids(num_mesh_ids) as i32;
 		for pair in old_transforms {
 			mesh_id_old2new.insert(pair.0, next_mesh_id);
 			self.mesh_relation
@@ -1072,8 +1077,8 @@ impl Impl {
 
 		let num_tri = self.num_tri();
 		for i in 0..num_tri {
-			let r#ref = &mut self.mesh_relation.tri_ref[i];
-			r#ref.mesh_id = *mesh_id_old2new.get(&r#ref.mesh_id).unwrap_or(&0)
+			let tri_ref = &mut self.mesh_relation.tri_ref[i];
+			tri_ref.mesh_id = *mesh_id_old2new.get(&tri_ref.mesh_id).unwrap_or(&0)
 		}
 	}
 
@@ -1171,7 +1176,7 @@ impl Impl {
 	}
 }
 
-impl Default for Impl {
+impl Default for MeshBoolImpl {
 	fn default() -> Self {
 		Self {
 			bbox: AABB::default(),
