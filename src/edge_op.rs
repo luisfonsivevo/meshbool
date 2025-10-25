@@ -68,10 +68,10 @@ impl<'a> Pred for FlagEdge<'a> {
 		while current != edge {
 			current = next_halfedge(self.meshbool_impl.halfedge[current].paired_halfedge) as usize;
 			let tri = current / 3;
-			let r#ref = self.meshbool_impl.mesh_relation.tri_ref[tri];
-			if !r#ref.same_face(&ref0) && !r#ref.same_face(&ref1) {
+			let tri_ref = self.meshbool_impl.mesh_relation.tri_ref[tri];
+			if !tri_ref.same_face(&ref0) && !tri_ref.same_face(&ref1) {
 				if !ref1_updated {
-					ref1 = r#ref;
+					ref1 = tri_ref;
 					ref1_updated = true;
 				} else {
 					return false;
@@ -626,19 +626,19 @@ impl MeshBoolImpl {
 				current = next_halfedge(current);
 				let p_next = self.vert_pos[self.halfedge[current as usize].end_vert as usize];
 				let tri = (current / 3) as usize;
-				let r#ref = self.mesh_relation.tri_ref[tri];
+				let tri_ref = self.mesh_relation.tri_ref[tri];
 				let projection = get_axis_aligned_projection(self.face_normal[tri]);
 				// Don't collapse if the edge is not redundant (this may have changed due
 				// to the collapse of neighbors).
-				if !r#ref.same_face(&ref_check) {
+				if !tri_ref.same_face(&ref_check) {
 					let old_ref = ref_check;
 					ref_check = self.mesh_relation.tri_ref[(edge / 3) as usize];
-					if !r#ref.same_face(&ref_check) {
+					if !tri_ref.same_face(&ref_check) {
 						return false;
 					}
 
-					if r#ref.mesh_id != old_ref.mesh_id
-						|| r#ref.face_id != old_ref.face_id
+					if tri_ref.mesh_id != old_ref.mesh_id
+						|| tri_ref.face_id != old_ref.face_id
 						|| self.face_normal[(to_remove.paired_halfedge / 3) as usize]
 							.dot(&self.face_normal[tri])
 							< -0.5

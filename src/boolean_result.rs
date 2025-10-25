@@ -614,7 +614,7 @@ fn update_reference(
 
 struct Barycentric<'a> {
 	uvw: &'a mut [Vector3<f64>],
-	r#ref: &'a [TriRef],
+	tri_ref: &'a [TriRef],
 	vert_pos_p: &'a [Point3<f64>],
 	vert_pos_q: &'a [Point3<f64>],
 	vert_pos_r: &'a [Point3<f64>],
@@ -626,7 +626,7 @@ struct Barycentric<'a> {
 
 impl<'a> Barycentric<'a> {
 	fn call(&mut self, tri: usize) {
-		let ref_pq = self.r#ref[tri];
+		let ref_pq = self.tri_ref[tri];
 		if self.halfedge_r[3 * tri].start_vert < 0 {
 			return;
 		}
@@ -672,7 +672,7 @@ fn create_properties(out_r: &mut MeshBoolImpl, in_p: &MeshBoolImpl, in_q: &MeshB
 	for tri in 0..num_tri {
 		Barycentric {
 			uvw: &mut bary,
-			r#ref: &out_r.mesh_relation.tri_ref,
+			tri_ref: &out_r.mesh_relation.tri_ref,
 			vert_pos_p: &in_p.vert_pos,
 			vert_pos_q: &in_q.vert_pos,
 			vert_pos_r: &out_r.vert_pos,
@@ -702,8 +702,8 @@ fn create_properties(out_r: &mut MeshBoolImpl, in_p: &MeshBoolImpl, in_q: &MeshB
 			continue;
 		}
 
-		let r#ref = out_r.mesh_relation.tri_ref[tri];
-		let pq = r#ref.mesh_id == 0;
+		let tri_ref = out_r.mesh_relation.tri_ref[tri];
+		let pq = tri_ref.mesh_id == 0;
 		let old_num_prop = (if pq { num_prop_p } else { num_prop_q }) as i32;
 		let properties = if pq {
 			&in_p.properties
@@ -722,7 +722,7 @@ fn create_properties(out_r: &mut MeshBoolImpl, in_p: &MeshBoolImpl, in_q: &MeshB
 				for j in 0..3 {
 					if uvw[j as usize] == 1.0 {
 						// On a retained vert, the propVert must also match
-						key[2] = halfedge[(3 * r#ref.face_id + j) as usize].prop_vert;
+						key[2] = halfedge[(3 * tri_ref.face_id + j) as usize].prop_vert;
 						edge = -1;
 						break;
 					}
@@ -734,8 +734,8 @@ fn create_properties(out_r: &mut MeshBoolImpl, in_p: &MeshBoolImpl, in_q: &MeshB
 
 				if edge >= 0 {
 					// On an edge, both propVerts must match
-					let p0 = halfedge[(3 * r#ref.face_id + next3_i32(edge)) as usize].prop_vert;
-					let p1 = halfedge[(3 * r#ref.face_id + prev3_i32(edge)) as usize].prop_vert;
+					let p0 = halfedge[(3 * tri_ref.face_id + next3_i32(edge)) as usize].prop_vert;
+					let p1 = halfedge[(3 * tri_ref.face_id + prev3_i32(edge)) as usize].prop_vert;
 					key[1] = vert;
 					key[2] = p0.min(p1);
 					key[3] = p0.max(p1);
@@ -779,7 +779,7 @@ fn create_properties(out_r: &mut MeshBoolImpl, in_p: &MeshBoolImpl, in_q: &MeshB
 					let mut old_props = Vector3::default();
 					for j in 0..3 {
 						old_props[j as usize] = properties[(old_num_prop
-							* halfedge[(3 * r#ref.face_id + j) as usize].prop_vert
+							* halfedge[(3 * tri_ref.face_id + j) as usize].prop_vert
 							+ p) as usize];
 					}
 

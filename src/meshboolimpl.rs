@@ -1077,8 +1077,8 @@ impl MeshBoolImpl {
 
 		let num_tri = self.num_tri();
 		for i in 0..num_tri {
-			let r#ref = &mut self.mesh_relation.tri_ref[i];
-			r#ref.mesh_id = *mesh_id_old2new.get(&r#ref.mesh_id).unwrap_or(&0)
+			let tri_ref = &mut self.mesh_relation.tri_ref[i];
+			tri_ref.mesh_id = *mesh_id_old2new.get(&tri_ref.mesh_id).unwrap_or(&0)
 		}
 	}
 

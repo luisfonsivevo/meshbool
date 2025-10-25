@@ -375,13 +375,13 @@ impl MeshBool {
 		let mut last_id = -1;
 		for tri in 0..num_tri {
 			let old_tri = tri_new2old[tri] as usize;
-			let r#ref = tri_ref[old_tri];
-			let mesh_id = r#ref.mesh_id;
+			let tri_ref = tri_ref[old_tri];
+			let mesh_id = tri_ref.mesh_id;
 
-			face_id[tri] = (if r#ref.face_id >= 0 {
-				r#ref.face_id
+			face_id[tri] = (if tri_ref.face_id >= 0 {
+				tri_ref.face_id
 			} else {
-				r#ref.coplanar_id
+				tri_ref.coplanar_id
 			}) as u32;
 			for i in 0..3 {
 				tri_verts[3 * tri + i] = meshbool_impl.halfedge[3 * old_tri + i].start_vert as u32;
