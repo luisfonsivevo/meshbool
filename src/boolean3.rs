@@ -1,7 +1,7 @@
 use crate::collider::Recorder;
 use crate::common::{AABB, AABBOverlap, OpType};
 use crate::disjoint_sets::DisjointSets;
-use crate::r#impl::Impl;
+use crate::meshboolimpl::MeshBoolImpl;
 use crate::shared::Halfedge;
 use crate::utils::permute;
 use core::f64;
@@ -448,8 +448,8 @@ impl<'a> Recorder for Kernel12Recorder<'a> {
 }
 
 fn intersect12(
-	in_p: &Impl,
-	in_q: &Impl,
+	in_p: &MeshBoolImpl,
+	in_q: &MeshBoolImpl,
 	expand_p: f64,
 	forward: bool,
 ) -> (Vec<[i32; 2]>, Vec<i32>, Vec<Point3<f64>>) {
@@ -537,8 +537,8 @@ impl<'a, 'b> Recorder for Winding03Recorder<'a, 'b> {
 }
 
 fn winding03(
-	in_p: &Impl,
-	in_q: &Impl,
+	in_p: &MeshBoolImpl,
+	in_q: &MeshBoolImpl,
 	p1q2: &[[i32; 2]],
 	expand_p: f64,
 	forward: bool,
@@ -601,8 +601,8 @@ fn winding03(
 }
 
 pub struct Boolean3<'a> {
-	pub in_p: &'a Impl,
-	pub in_q: &'a Impl,
+	pub in_p: &'a MeshBoolImpl,
+	pub in_q: &'a MeshBoolImpl,
 	pub expand_p: f64,
 	pub p1q2: Vec<[i32; 2]>,
 	pub p2q1: Vec<[i32; 2]>,
@@ -616,7 +616,7 @@ pub struct Boolean3<'a> {
 }
 
 impl<'a> Boolean3<'a> {
-	pub fn new(in_p: &'a Impl, in_q: &'a Impl, op: OpType) -> Self {
+	pub fn new(in_p: &'a MeshBoolImpl, in_q: &'a MeshBoolImpl, op: OpType) -> Self {
 		let expand_p = if op == OpType::Add { 1.0 } else { -1.0 };
 
 		// Symbolic perturbation:

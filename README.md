@@ -10,15 +10,15 @@ This repo is up to date with [this Manifold commit](https://github.com/elalish/m
 
 ```Rust
 //note you currently need the nalgebra crate to construct these linear algebra objects
-let cube1 = meshbool::cube(Vector3::new(1.0, 1.0, 1.0), true);
-let cube2 = meshbool::cube(Vector3::new(1.0, 1.0, 1.0), false);
+let cube1 = MeshBool::cube(Vector3::new(1.0, 1.0, 1.0), true);
+let cube2 = MeshBool::cube(Vector3::new(1.0, 1.0, 1.0), false);
 
 let union = &cube1 + &cube2;
 let difference = &cube1 - &cube2;
 let intersection = &cube1 ^ &cube2;
 
 //now convert the output into a format suitable for rendering
-let mesh = meshbool::get_mesh_gl(&union, 0);
+let mesh = union.get_mesh_gl(0);
 ```
 
 ```TOML

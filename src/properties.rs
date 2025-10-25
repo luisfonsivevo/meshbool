@@ -1,6 +1,6 @@
 use nalgebra::Point3;
 
-use crate::r#impl::Impl;
+use crate::meshboolimpl::MeshBoolImpl;
 use crate::shared::{Halfedge, next_halfedge};
 
 struct CheckHalfedges<'a> {
@@ -34,7 +34,7 @@ impl<'a> CheckHalfedges<'a> {
 	}
 }
 
-impl Impl {
+impl MeshBoolImpl {
 	/**
 		* Returns true if this manifold is in fact an oriented even manifold and all of
 		* the data structures are consistent.

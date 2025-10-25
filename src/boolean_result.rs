@@ -1,7 +1,7 @@
 use crate::ManifoldError;
 use crate::boolean3::Boolean3;
 use crate::common::{AABB, OpType, OrderedF64};
-use crate::r#impl::{Impl, MESH_ID_COUNTER};
+use crate::meshboolimpl::{MESH_ID_COUNTER, MeshBoolImpl};
 use crate::parallel::{
 	copy_if, exclusive_scan_transformed, gather, gather_transformed, inclusive_scan,
 };
@@ -88,9 +88,9 @@ impl<'a, const INVERTED: bool, const ATOMIC: bool> CountNewVerts<'a, INVERTED, A
 }
 
 fn size_output(
-	out_r: &mut Impl,
-	in_p: &Impl,
-	in_q: &Impl,
+	out_r: &mut MeshBoolImpl,
+	in_p: &MeshBoolImpl,
+	in_q: &MeshBoolImpl,
 	i03: &[i32],
 	i30: &[i32],
 	i12: Vec<i32>,
@@ -304,12 +304,12 @@ fn pair_up(edge_pos: &mut [EdgePos]) -> Vec<Halfedge> {
 }
 
 fn append_partial_edges(
-	out_r: &mut Impl,
+	out_r: &mut MeshBoolImpl,
 	whole_halfedge_p: &mut [bool],
 	face_ptr_r: &mut [i32],
 	mut edges_p: BTreeMap<i32, Vec<EdgePos>>,
 	halfedge_ref: &mut [TriRef],
-	in_p: &Impl,
+	in_p: &MeshBoolImpl,
 	i03: &[i32],
 	v_p2r: &[i32],
 	face_p2r: &[i32],
@@ -409,7 +409,7 @@ fn append_partial_edges(
 }
 
 fn append_new_edges(
-	out_r: &mut Impl,
+	out_r: &mut MeshBoolImpl,
 	face_ptr_r: &mut [i32],
 	edges_new: BTreeMap<(i32, i32), Vec<EdgePos>>,
 	halfedge_ref: &mut [TriRef],
@@ -481,10 +481,10 @@ fn append_new_edges(
 }
 
 fn append_whole_edges(
-	out_r: &mut Impl,
+	out_r: &mut MeshBoolImpl,
 	face_ptr_r: &mut [i32],
 	halfedge_ref: &mut [TriRef],
-	in_p: &Impl,
+	in_p: &MeshBoolImpl,
 	whole_halfedge_p: Vec<bool>,
 	i03: Vec<i32>,
 	v_p2r: Vec<i32>,
@@ -576,7 +576,12 @@ impl<'a> UpdateReference<'a> {
 	}
 }
 
-fn update_reference(out_r: &mut Impl, in_p: &Impl, in_q: &Impl, invert_q: bool) {
+fn update_reference(
+	out_r: &mut MeshBoolImpl,
+	in_p: &MeshBoolImpl,
+	in_q: &MeshBoolImpl,
+	invert_q: bool,
+) {
 	let offset_q = MESH_ID_COUNTER.load(Ordering::SeqCst) as i32;
 	let num_tri = out_r.num_tri();
 	for tri_ref in &mut out_r.mesh_relation.tri_ref[..num_tri] {
@@ -653,7 +658,7 @@ impl<'a> Barycentric<'a> {
 	}
 }
 
-fn create_properties(out_r: &mut Impl, in_p: &Impl, in_q: &Impl) {
+fn create_properties(out_r: &mut MeshBoolImpl, in_p: &MeshBoolImpl, in_q: &MeshBoolImpl) {
 	let num_prop_p = in_p.num_prop();
 	let num_prop_q = in_q.num_prop();
 	let num_prop = num_prop_p.max(num_prop_q);
@@ -829,7 +834,7 @@ fn reorder_halfedges(halfedges: &mut [Halfedge]) {
 }
 
 impl<'a> Boolean3<'a> {
-	pub fn result(self, op: OpType) -> Impl {
+	pub fn result(self, op: OpType) -> MeshBoolImpl {
 		debug_assert!(
 			(self.expand_p > 0.0) == (op == OpType::Add),
 			"Result op type not compatible with constructor op type."
@@ -839,15 +844,15 @@ impl<'a> Boolean3<'a> {
 		let c3 = if op == OpType::Intersect { 1 } else { -1 };
 
 		if self.in_p.status != ManifoldError::NoError {
-			let mut r#impl = Impl::default();
-			r#impl.status = self.in_p.status;
-			return r#impl;
+			let mut meshbool_impl = MeshBoolImpl::default();
+			meshbool_impl.status = self.in_p.status;
+			return meshbool_impl;
 		}
 
 		if self.in_q.status != ManifoldError::NoError {
-			let mut r#impl = Impl::default();
-			r#impl.status = self.in_q.status;
-			return r#impl;
+			let mut meshbool_impl = MeshBoolImpl::default();
+			meshbool_impl.status = self.in_q.status;
+			return meshbool_impl;
 		}
 
 		if self.in_p.is_empty() {
@@ -855,19 +860,19 @@ impl<'a> Boolean3<'a> {
 				return self.in_q.clone();
 			}
 
-			return Impl::default();
+			return MeshBoolImpl::default();
 		} else if self.in_q.is_empty() {
 			if op == OpType::Intersect {
-				return Impl::default();
+				return MeshBoolImpl::default();
 			}
 
 			return self.in_p.clone();
 		}
 
 		if !self.valid {
-			let mut r#impl = Impl::default();
-			r#impl.status = ManifoldError::ResultTooLarge;
-			return r#impl;
+			let mut meshbool_impl = MeshBoolImpl::default();
+			meshbool_impl.status = ManifoldError::ResultTooLarge;
+			return meshbool_impl;
 		}
 
 		let invert_q = op == OpType::Subtract;
@@ -907,7 +912,7 @@ impl<'a> Boolean3<'a> {
 		//let n21 = num_vert_r - n_pv - n_qv - n12;
 
 		// Create the output Manifold
-		let mut out_r = Impl::default();
+		let mut out_r = MeshBoolImpl::default();
 
 		if num_vert_r == 0 {
 			return out_r;
