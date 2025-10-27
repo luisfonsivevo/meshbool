@@ -10,13 +10,13 @@ pub use crate::common::OpType;
 mod boolean3;
 mod boolean_result;
 mod collider;
-pub mod common;
+mod common;
 mod constructors;
 mod disjoint_sets;
 mod edge_op;
 mod face_op;
 mod mesh_fixes;
-mod meshboolimpl;
+pub mod meshboolimpl;
 mod parallel;
 mod polygon;
 mod properties;
@@ -191,7 +191,7 @@ impl MeshGL {
 
 #[derive(Default, Debug)]
 pub struct MeshBool {
-	meshbool_impl: MeshBoolImpl,
+	pub meshbool_impl: MeshBoolImpl,
 }
 
 impl MeshBool {
