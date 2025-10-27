@@ -180,7 +180,7 @@ impl FlagStore {
 impl MeshBoolImpl {
 	///Duplicates just enough verts to covert an even-manifold to a proper
 	///2-manifold, splitting non-manifold verts and edges with too many triangles.
-	pub(crate) fn cleanup_topology(&mut self) {
+	pub fn cleanup_topology(&mut self) {
 		if self.halfedge.is_empty() {
 			return;
 		}
@@ -212,7 +212,7 @@ impl MeshBoolImpl {
 	///
 	///Rather than actually removing the edges, this step merely marks them for
 	///removal, by setting vertPos to NaN and halfedge to {-1, -1, -1, -1}.
-	pub(crate) fn simplify_topology(&mut self, first_new_vert: i32) {
+	pub fn simplify_topology(&mut self, first_new_vert: i32) {
 		if self.halfedge.is_empty() {
 			return;
 		}
@@ -223,7 +223,7 @@ impl MeshBoolImpl {
 		self.swap_degenerates(first_new_vert);
 	}
 
-	pub(crate) fn remove_degenerates(&mut self, first_new_vert: Option<i32>) {
+	pub fn remove_degenerates(&mut self, first_new_vert: Option<i32>) {
 		let first_new_vert = first_new_vert.unwrap_or(0);
 		if self.halfedge.is_empty() {
 			return;

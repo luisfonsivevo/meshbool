@@ -1,12 +1,11 @@
 use crate::boolean3::Boolean3;
-use crate::meshboolimpl::Relation;
+use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
 pub use crate::common::AABB;
 pub use crate::common::OpType;
-pub use crate::meshboolimpl::MeshBoolImpl;
 
 mod boolean3;
 mod boolean_result;

@@ -16,13 +16,13 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering as AtomicOrdering};
 
 #[derive(Copy, Clone)]
 #[allow(unused)]
-pub(crate) enum Shape {
+pub enum Shape {
 	Tetrahedron,
 	Cube,
 	Octahedron,
 }
 
-pub(crate) static MESH_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+pub static MESH_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 ///@brief This library's internal representation of an oriented, 2-manifold,
 ///triangle mesh - a simple boundary-representation of a solid object. Use this
@@ -415,7 +415,7 @@ impl MeshBoolImpl {
 		manifold
 	}
 
-	pub(crate) fn from_shape(shape: Shape, m: Matrix3x4<f64>) -> Self {
+	pub fn from_shape(shape: Shape, m: Matrix3x4<f64>) -> Self {
 		let (mut vert_pos, tri_verts) = match shape {
 			Shape::Tetrahedron => (
 				vec![
@@ -496,7 +496,7 @@ impl MeshBoolImpl {
 		meshbool_impl
 	}
 
-	pub(crate) fn remove_unreferenced_verts(&mut self) {
+	pub fn remove_unreferenced_verts(&mut self) {
 		let num_vert = self.num_vert();
 		let keep = vec![0; num_vert];
 		for h in &self.halfedge {
@@ -518,7 +518,7 @@ impl MeshBoolImpl {
 		MESH_ID_COUNTER.fetch_add(n, AtomicOrdering::Relaxed)
 	}
 
-	pub(crate) fn initialize_original(&mut self, keep_face_id: bool) {
+	pub fn initialize_original(&mut self, keep_face_id: bool) {
 		let mesh_id = MeshBoolImpl::reserve_ids(1) as i32;
 		self.mesh_relation.original_id = mesh_id;
 		let num_tri = self.num_tri();
@@ -549,7 +549,7 @@ impl MeshBoolImpl {
 		}
 	}
 
-	pub(crate) fn mark_coplanar(&mut self) {
+	pub fn mark_coplanar(&mut self) {
 		let num_tri = self.num_tri();
 		struct TriPriority {
 			area2: f64,
@@ -627,11 +627,7 @@ impl MeshBoolImpl {
 	///both vert and propVert indices. If prop2vert is present, the triangles are
 	///assumed to be pointing to propVert indices only. The prop2vert array is used
 	///to map the propVert indices to vert indices.
-	pub(crate) fn create_halfedges(
-		&mut self,
-		tri_prop: Vec<Vector3<i32>>,
-		tri_vert: Vec<Vector3<i32>>,
-	) {
+	pub fn create_halfedges(&mut self, tri_prop: Vec<Vector3<i32>>, tri_vert: Vec<Vector3<i32>>) {
 		let num_tri = tri_prop.len();
 		let num_halfedge: i32 = (3 * num_tri) as i32;
 		// drop the old value first to avoid copy
@@ -850,7 +846,7 @@ impl MeshBoolImpl {
 		self.collider.update_boxes(&face_box);
 	}
 
-	pub(crate) fn make_empty(&mut self, status: ManifoldError) {
+	pub fn make_empty(&mut self, status: ManifoldError) {
 		self.bbox = AABB::default();
 		self.vert_pos = Vec::default();
 		self.halfedge = Vec::default();
@@ -931,7 +927,7 @@ impl MeshBoolImpl {
 		result
 	}
 
-	pub(crate) fn set_epsilon(&mut self, min_epsilon: f64, use_single: bool) {
+	pub fn set_epsilon(&mut self, min_epsilon: f64, use_single: bool) {
 		self.epsilon = max_epsilon(min_epsilon, &self.bbox);
 		let mut min_tol = self.epsilon;
 		if use_single {
@@ -951,7 +947,7 @@ impl MeshBoolImpl {
 	///If the face normals have been invalidated by an operation like Warp(),
 	///ensure you do faceNormal_.resize(0) before calling this function to force
 	///recalculation.
-	pub(crate) fn calculate_normals(&mut self) {
+	pub fn calculate_normals(&mut self) {
 		let num_vert = self.num_vert();
 		vec_resize(&mut self.vert_normal, num_vert);
 
@@ -1059,7 +1055,7 @@ impl MeshBoolImpl {
 
 	///Remaps all the contained meshIDs to new unique values to represent new
 	///instances of these meshes.
-	pub(crate) fn increment_mesh_ids(&mut self) {
+	pub fn increment_mesh_ids(&mut self) {
 		//in c++ this uses a custom hashtable class
 		let mut mesh_id_old2new =
 			HashMap::with_capacity(self.mesh_relation.mesh_id_transform.len() * 2);
@@ -1083,7 +1079,7 @@ impl MeshBoolImpl {
 	}
 
 	#[inline]
-	pub(crate) fn for_vert(&self, halfedge: i32, mut func: impl FnMut(i32)) {
+	pub fn for_vert(&self, halfedge: i32, mut func: impl FnMut(i32)) {
 		let mut current = halfedge;
 		loop {
 			current = next_halfedge(self.halfedge[current as usize].paired_halfedge);
@@ -1095,7 +1091,7 @@ impl MeshBoolImpl {
 	}
 
 	#[inline]
-	pub(crate) fn for_vert_mut(&mut self, halfedge: i32, mut func: impl FnMut(&mut Self, i32)) {
+	pub fn for_vert_mut(&mut self, halfedge: i32, mut func: impl FnMut(&mut Self, i32)) {
 		let mut current = halfedge;
 		loop {
 			current = next_halfedge(self.halfedge[current as usize].paired_halfedge);
@@ -1108,7 +1104,7 @@ impl MeshBoolImpl {
 
 	///Dereference duplicate property vertices if they are exactly floating-point
 	///equal. These unreferenced properties are then removed by CompactProps.
-	pub(crate) fn dedupe_prop_verts(&mut self) {
+	pub fn dedupe_prop_verts(&mut self) {
 		let num_prop = self.num_prop();
 		if num_prop == 0 {
 			return;

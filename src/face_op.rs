@@ -77,12 +77,7 @@ impl MeshBoolImpl {
 	///vector itself. Upon return, halfedge_ has been lengthened and properly
 	///represents the mesh as a set of triangles as usual. In this process the
 	///faceNormal_ values are retained, repeated as necessary.
-	pub(crate) fn face2tri(
-		&mut self,
-		face_edge: &[i32],
-		halfedge_ref: &[TriRef],
-		allow_convex: bool,
-	) {
+	pub fn face2tri(&mut self, face_edge: &[i32], halfedge_ref: &[TriRef], allow_convex: bool) {
 		let general_triangulation = |face| {
 			let normal = self.face_normal[face];
 			let projection = get_axis_aligned_projection(normal);
