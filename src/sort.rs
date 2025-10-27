@@ -24,7 +24,7 @@ impl MeshBoolImpl {
 	///Once halfedge_ has been filled in, this function can be called to create the
 	///rest of the internal data structures. This function also removes the verts
 	///and halfedges flagged for removal (NaN verts and -1 halfedges).
-	pub(crate) fn finish(&mut self) {
+	pub fn finish(&mut self) {
 		if self.halfedge.len() == 0 {
 			return;
 		}
@@ -151,7 +151,7 @@ impl MeshBoolImpl {
 	///Fills the faceBox and faceMorton input with the bounding boxes and Morton
 	///codes of the faces, respectively. The Morton code is based on the center of
 	///the bounding box.
-	pub(crate) fn get_face_box_morton(&self, face_box: &mut Vec<AABB>, face_morton: &mut Vec<u32>) {
+	pub fn get_face_box_morton(&self, face_box: &mut Vec<AABB>, face_morton: &mut Vec<u32>) {
 		// faceBox should be initialized
 		vec_resize(face_box, self.num_tri());
 		unsafe {

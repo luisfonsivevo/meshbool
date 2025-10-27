@@ -39,7 +39,7 @@ impl MeshBoolImpl {
 		* Returns true if this manifold is in fact an oriented even manifold and all of
 		* the data structures are consistent.
 		*/
-	pub(crate) fn is_manifold(&self) -> bool {
+	pub fn is_manifold(&self) -> bool {
 		if self.halfedge.len() == 0 {
 			return true;
 		}
@@ -56,7 +56,7 @@ impl MeshBoolImpl {
 
 	///Returns true if this manifold is in fact an oriented 2-manifold and all of
 	///the data structures are consistent.
-	pub(crate) fn is_2_manifold(&self) -> bool {
+	pub fn is_2_manifold(&self) -> bool {
 		if !self.is_manifold() {
 			return false;
 		}
@@ -75,7 +75,7 @@ impl MeshBoolImpl {
 		})
 	}
 
-	pub(crate) fn calculate_bbox(&mut self) {
+	pub fn calculate_bbox(&mut self) {
 		self.bbox.min = self.vert_pos.iter().fold(
 			Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
 			|a, &b| {
@@ -105,7 +105,7 @@ impl MeshBoolImpl {
 
 	///Determines if all verts are finite. Checking just the bounding box dimensions
 	///is insufficient as it ignores NaNs.
-	pub(crate) fn is_finite(&self) -> bool {
+	pub fn is_finite(&self) -> bool {
 		!self
 			.vert_pos
 			.iter()
