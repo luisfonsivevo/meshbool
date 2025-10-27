@@ -1,10 +1,12 @@
 use crate::boolean3::Boolean3;
-pub use crate::common::OpType;
-pub use crate::meshboolimpl::MeshBoolImpl;
 use crate::meshboolimpl::Relation;
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
+
+pub use crate::common::AABB;
+pub use crate::common::OpType;
+pub use crate::meshboolimpl::MeshBoolImpl;
 
 mod boolean3;
 mod boolean_result;
@@ -15,7 +17,7 @@ mod disjoint_sets;
 mod edge_op;
 mod face_op;
 mod mesh_fixes;
-pub mod meshboolimpl;
+mod meshboolimpl;
 mod parallel;
 mod polygon;
 mod properties;
@@ -188,7 +190,7 @@ impl MeshGL {
 	}
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MeshBool {
 	meshbool_impl: MeshBoolImpl,
 }
@@ -311,19 +313,7 @@ impl MeshBool {
 		Self::from(Boolean3::new(&self.meshbool_impl, &other.meshbool_impl, op).result(op))
 	}
 
-	///The most complete output of this library, returning a MeshGL that is designed
-	///to easily push into a renderer, including all interleaved vertex properties
-	///that may have been input. It also includes relations to all the input meshes
-	///that form a part of this result and the transforms applied to each.
-	///
-	///@param normalIdx If the original MeshGL inputs that formed this manifold had
-	///properties corresponding to normal vectors, you can specify the first of the
-	///three consecutive property channels forming the (x, y, z) normals, which will
-	///cause this output MeshGL to automatically update these normals according to
-	///the applied transforms and front/back side. normalIdx + 3 must be <=
-	///numProp, and all original MeshGLs must use the same channels for their
-	///normals.
-	pub fn get_mesh_gl_internal(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGL {
+	fn get_mesh_gl_impl(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGL {
 		let num_prop = meshbool_impl.num_prop();
 		let num_vert = meshbool_impl.num_prop_vert();
 		let num_tri = meshbool_impl.num_tri();
@@ -506,12 +496,84 @@ impl MeshBool {
 		}
 	}
 
+	///The most complete output of this library, returning a MeshGL that is designed
+	///to easily push into a renderer, including all interleaved vertex properties
+	///that may have been input. It also includes relations to all the input meshes
+	///that form a part of this result and the transforms applied to each.
+	///
+	///@param normalIdx If the original MeshGL inputs that formed this manifold had
+	///properties corresponding to normal vectors, you can specify the first of the
+	///three consecutive property channels forming the (x, y, z) normals, which will
+	///cause this output MeshGL to automatically update these normals according to
+	///the applied transforms and front/back side. normalIdx + 3 must be <=
+	///numProp, and all original MeshGLs must use the same channels for their
+	///normals.
 	pub fn get_mesh_gl(&self, normal_idx: i32) -> MeshGL {
-		Self::get_mesh_gl_internal(&self.meshbool_impl, normal_idx)
+		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
 	}
 
 	pub fn from_meshgl(mesh_gl: MeshGL) -> Self {
 		Self::from(MeshBoolImpl::from_meshgl(mesh_gl))
+	}
+
+	///Does the Manifold have any triangles?
+	pub fn is_empty(&self) -> bool {
+		self.meshbool_impl.is_empty()
+	}
+
+	///Returns the reason for an input Mesh producing an empty Manifold. This Status
+	///will carry on through operations like NaN propogation, ensuring an errored
+	///mesh doesn't get mysteriously lost. Empty meshes may still show
+	///NoError, for instance the intersection of non-overlapping meshes.
+	pub fn status(&self) -> ManifoldError {
+		self.meshbool_impl.status
+	}
+
+	///The number of vertices in the Manifold.
+	pub fn num_vert(&self) -> usize {
+		self.meshbool_impl.num_vert()
+	}
+
+	///The number of edges in the Manifold.
+	pub fn num_edge(&self) -> usize {
+		self.meshbool_impl.num_edge()
+	}
+
+	///The number of triangles in the Manifold.
+	pub fn num_tri(&self) -> usize {
+		self.meshbool_impl.num_tri()
+	}
+
+	///The number of properties per vertex in the Manifold.
+	pub fn num_prop(&self) -> usize {
+		self.meshbool_impl.num_prop()
+	}
+
+	///The number of property vertices in the Manifold. This will always be >=
+	///NumVert, as some physical vertices may be duplicated to account for different
+	///properties on different neighboring triangles.
+	pub fn num_prop_vert(&self) -> usize {
+		self.meshbool_impl.num_prop_vert()
+	}
+
+	///Returns the axis-aligned bounding box of all the Manifold's vertices.
+	pub fn bounding_box(&self) -> AABB {
+		self.meshbool_impl.bbox
+	}
+
+	///Returns the epsilon value of this Manifold's vertices, which tracks the
+	///approximate rounding error over all the transforms and operations that have
+	///led to this state. This is the value of &epsilon; defining
+	///[&epsilon;-valid](https://github.com/elalish/manifold/wiki/Manifold-Library#definition-of-%CE%B5-valid).
+	pub fn get_epsilon(&self) -> f64 {
+		self.meshbool_impl.epsilon
+	}
+
+	///Returns the tolerance value of this Manifold. Triangles that are coplanar
+	///within tolerance tend to be merged and edges shorter than tolerance tend to
+	///be collapsed.
+	pub fn get_tolerance(&self) -> f64 {
+		self.meshbool_impl.tolerance
 	}
 }
 
