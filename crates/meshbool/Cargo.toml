@@ -1,0 +1,12 @@
+[package]
+name = "meshbool"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "meshbool"
+
+[features]
+
+[dependencies]
+nalgebra = { version = "0.34", default-features = false, features = ["std"] }

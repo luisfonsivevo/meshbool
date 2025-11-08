@@ -137,6 +137,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "meshbool-cpp"
+version = "0.0.0"
+dependencies = [
+ "meshbool",
+]
+
+[[package]]
 name = "nalgebra"
 version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

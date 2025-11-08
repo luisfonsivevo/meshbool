@@ -1,0 +1,11 @@
+[package]
+name = "meshbool-cpp"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "meshbool_unsafe"
+crate-type = ["staticlib"]
+
+[dependencies]
+meshbool = { path = "../meshbool" }

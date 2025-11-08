@@ -1,9 +1,6 @@
-[package]
-name = "meshbool"
+[workspace]
+members = ["crates/meshbool", "crates/meshbool-cpp"]
+
+[workspace.package]
 version = "0.0.0"
 edition = "2024"
-
-[features]
-
-[dependencies]
-nalgebra = { version = "0.34", default-features = false, features = ["std"] }
