@@ -189,7 +189,7 @@ impl MeshGL {
 	}
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct MeshBool {
 	meshbool_impl: MeshBoolImpl,
 }
