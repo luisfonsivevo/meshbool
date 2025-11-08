@@ -511,7 +511,7 @@ impl MeshBool {
 		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
 	}
 
-	pub fn from_meshgl(mesh_gl: MeshGL) -> Self {
+	pub fn from_meshgl(mesh_gl: &MeshGL) -> Self {
 		Self::from(MeshBoolImpl::from_meshgl(mesh_gl))
 	}
 
