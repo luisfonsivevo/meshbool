@@ -2,7 +2,7 @@ use crate::ManifoldError;
 use crate::collider::Collider;
 use crate::common::AABB;
 use crate::meshboolimpl::MeshBoolImpl;
-use crate::parallel::{inclusive_scan, scatter};
+use crate::parallel::{gather, inclusive_scan, scatter};
 use crate::utils::permute;
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
 use nalgebra::Point3;
@@ -98,7 +98,7 @@ impl MeshBoolImpl {
 	///Updates the halfedges to point to new vert indices based on a mapping,
 	///vertNew2Old. This may be a subset, so the total number of original verts is
 	///also given.
-	fn reindex_verts(&mut self, vert_new2old: &[i32], old_num_vert: usize) {
+	pub fn reindex_verts(&mut self, vert_new2old: &[i32], old_num_vert: usize) {
 		let mut vert_old2new: Vec<i32> = unsafe { vec_uninit(old_num_vert) };
 		scatter(0..self.num_vert() as i32, vert_new2old, &mut vert_old2new);
 		let has_prop = self.num_prop() > 0;
@@ -106,6 +106,8 @@ impl MeshBoolImpl {
 			if edge.start_vert < 0 {
 				return;
 			}
+			println!("{}", edge.start_vert);
+			println!("{}", edge.end_vert);
 			edge.start_vert = vert_old2new[edge.start_vert as usize];
 			edge.end_vert = vert_old2new[edge.end_vert as usize];
 			if !has_prop {
@@ -208,7 +210,7 @@ impl MeshBoolImpl {
 	///Creates the halfedge_ vector for this manifold by copying a set of faces from
 	///another manifold, given by oldHalfedge. Input faceNew2Old defines the old
 	///faces to gather into this.
-	fn gather_faces(&mut self, face_new2old: &[i32]) {
+	pub fn gather_faces(&mut self, face_new2old: &[i32]) {
 		let num_tri = face_new2old.len();
 		if self.mesh_relation.tri_ref.len() == self.num_tri() {
 			permute(&mut self.mesh_relation.tri_ref, face_new2old);
@@ -239,5 +241,47 @@ impl MeshBoolImpl {
 					halfedge_chunk[i as usize] = edge;
 				}
 			});
+	}
+
+	pub fn gather_faces_with_old(&mut self, old: &Self, face_new2old: &[i32]) {
+		let num_tri = face_new2old.len();
+
+		unsafe { vec_resize_nofill(&mut self.mesh_relation.tri_ref, num_tri) };
+
+		gather(
+			face_new2old,
+			&old.mesh_relation.tri_ref,
+			&mut self.mesh_relation.tri_ref,
+		);
+
+		for pair in old.mesh_relation.mesh_id_transform.iter() {
+			self.mesh_relation
+				.mesh_id_transform
+				.insert(*pair.0, pair.1.clone());
+		}
+
+		if old.num_prop() > 0 {
+			self.num_prop = old.num_prop;
+			self.properties = old.properties.clone();
+		}
+
+		if old.face_normal.len() == old.num_tri() {
+			unsafe {
+				vec_resize_nofill(&mut self.face_normal, num_tri);
+			}
+			gather(face_new2old, &old.face_normal, &mut self.face_normal);
+		}
+
+		let mut face_old2new = unsafe { vec_uninit(old.num_tri()) };
+		scatter(0..num_tri as i32, face_new2old, &mut face_old2new);
+
+		todo!("HalfedgeTangeent");
+		unsafe { vec_resize_nofill(&mut self.halfedge, 3 * num_tri) };
+		// if (old.halfedgeTangent_.size() != 0)
+		//   halfedgeTangent_.resize_nofill(3 * numTri);
+		for i in 0..num_tri {
+			//            ReindexFace({halfedge_, halfedgeTangent_, old.halfedge_,
+			//                         old.halfedgeTangent_, faceNew2Old, faceOld2New}));
+		}
 	}
 }
