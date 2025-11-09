@@ -1,7 +1,7 @@
 use crate::collider::Collider;
 use crate::common::{AABB, sun_acos};
 use crate::disjoint_sets::DisjointSets;
-use crate::mesh_fixes::{FlipTris, transform_normal};
+use crate::mesh_fixes::{FlipTris, TransformTangents, transform_normal};
 use crate::parallel::exclusive_scan_in_place;
 use crate::shared::{Halfedge, TriRef, max_epsilon, next_halfedge, normal_transform};
 use crate::utils::{atomic_add_i32, mat3, mat4, next3_i32, next3_usize};
@@ -59,6 +59,7 @@ pub struct MeshBoolImpl {
 	// function
 	pub vert_normal: Vec<Vector3<f64>>,
 	pub face_normal: Vec<Vector3<f64>>,
+	pub halfedge_tangent: Vec<Vector4<f64>>,
 	pub mesh_relation: MeshRelationD,
 	pub collider: Collider,
 }
@@ -231,12 +232,10 @@ impl MeshBoolImpl {
 			return manifold;
 		}
 
-		// if (!manifold::all_of(meshGL.halfedgeTangent.begin(),
-		//                       meshGL.halfedgeTangent.end(),
-		//                       [](Precision x) { return std::isfinite(x); })) {
-		//   MakeEmpty(Error::InvalidConstruction);
-		//   return;
-		// }
+		if mesh_gl.halfedge_tangent.iter().any(|x| !x.is_finite()) {
+			manifold.make_empty(ManifoldError::InvalidConstruction);
+			return manifold;
+		}
 
 		let mut prop2vert: Vec<i32>;
 		if !mesh_gl.merge_from_vert.is_empty() {
@@ -278,12 +277,11 @@ impl MeshBoolImpl {
 			}
 		}
 
-		// halfedgeTangent_.resize_nofill(meshGL.halfedgeTangent.len() / 4);
-		// for i in 0..halfedgeTangent_.len() {
-		//   for j in [0, 1, 2, 3] {
-		//     halfedgeTangent_[i][j] = meshGL.halfedgeTangent[4 * i + j];
-		//   }
-		// }
+		manifold.halfedge_tangent = mesh_gl
+			.halfedge_tangent
+			.chunks(4)
+			.map(|t| [t[0] as f64, t[1] as f64, t[2] as f64, t[3] as f64].into())
+			.collect::<Vec<nalgebra::Vector4<f64>>>();
 
 		let mut tri_ref: Vec<TriRef> = unsafe { vec_uninit(mesh_gl.num_tri()) };
 
@@ -852,6 +850,7 @@ impl MeshBoolImpl {
 		self.halfedge = Vec::default();
 		self.vert_normal = Vec::default();
 		self.face_normal = Vec::default();
+		self.halfedge_tangent = Vec::default();
 		self.mesh_relation = MeshRelationD::default();
 		self.status = status;
 	}
@@ -883,6 +882,9 @@ impl MeshBoolImpl {
 		result.properties = self.properties.clone();
 		result.bbox = self.bbox;
 		result.halfedge = self.halfedge.clone();
+		result
+			.halfedge_tangent
+			.resize(self.halfedge_tangent.len(), Default::default());
 
 		result.mesh_relation.original_id = -1;
 		for m in &mut result.mesh_relation.mesh_id_transform {
@@ -906,6 +908,21 @@ impl MeshBoolImpl {
 		}
 
 		let invert = mat3(transform).determinant() < 0.0;
+
+		if self.halfedge_tangent.len() > 0 {
+			let mut t = TransformTangents {
+				tangent: &mut result.halfedge_tangent,
+				edge_offset: 0,
+				transform: mat3(transform),
+				invert,
+				old_tangents: &self.halfedge_tangent,
+				halfedge: &self.halfedge,
+			};
+			for i in 0..self.halfedge_tangent.len() {
+				t.call(i as i32);
+			}
+		}
+
 		if invert {
 			for tri in 0..result.num_tri() {
 				FlipTris {
@@ -1185,6 +1202,7 @@ impl Default for MeshBoolImpl {
 			properties: Vec::default(),
 			vert_normal: Vec::default(),
 			face_normal: Vec::default(),
+			halfedge_tangent: Vec::default(),
 			mesh_relation: MeshRelationD::default(),
 			collider: Collider::default(),
 		}
