@@ -141,6 +141,7 @@ name = "meshbool-cpp"
 version = "0.0.0"
 dependencies = [
  "meshbool",
+ "nalgebra",
 ]
 
 [[package]]
