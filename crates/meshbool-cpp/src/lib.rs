@@ -6,10 +6,20 @@ use meshbool::{MeshGL, OpType};
 
 type MeshGL64 = MeshGL;
 
-pub const MANIFOLDOPTYPE_MANIFOLD_ADD: ManifoldOpType = 0;
-pub const MANIFOLDOPTYPE_MANIFOLD_SUBTRACT: ManifoldOpType = 1;
-pub const MANIFOLDOPTYPE_MANIFOLD_INTERSECT: ManifoldOpType = 2;
-pub type ManifoldOpType = ::core::ffi::c_uint;
+#[allow(
+	non_upper_case_globals,
+	non_camel_case_types,
+	non_snake_case,
+	dead_code
+)]
+mod bindgenc {
+	include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
+use bindgenc::ManifoldOpType;
+use bindgenc::ManifoldOpType_MANIFOLD_ADD as MANIFOLD_ADD;
+use bindgenc::ManifoldOpType_MANIFOLD_INTERSECT as MANIFOLD_INTERSECT;
+use bindgenc::ManifoldOpType_MANIFOLD_SUBTRACT as MANIFOLD_SUBTRACT;
+use bindgenc::ManifoldVec2;
 
 // Polygons
 
@@ -301,9 +311,9 @@ pub extern "C" fn manifold_boolean(
 			a.boolean(
 				b,
 				match op {
-					MANIFOLDOPTYPE_MANIFOLD_ADD => OpType::Add,
-					MANIFOLDOPTYPE_MANIFOLD_SUBTRACT => OpType::Subtract,
-					MANIFOLDOPTYPE_MANIFOLD_INTERSECT => OpType::Intersect,
+					MANIFOLD_ADD => OpType::Add,
+					MANIFOLD_SUBTRACT => OpType::Subtract,
+					MANIFOLD_INTERSECT => OpType::Intersect,
 					_ => {
 						panic!("Invalid OpType");
 					}

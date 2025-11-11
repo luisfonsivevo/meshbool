@@ -10,3 +10,6 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 meshbool = { path = "../meshbool" }
 nalgebra = { version = "0.34", default-features = false, features = ["std"] }
+
+[build-dependencies]
+bindgen = "0.72.0"
