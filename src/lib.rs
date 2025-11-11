@@ -112,7 +112,7 @@ fn test() {
 ///
 ///MeshGL is an alias for the standard single-precision version. Use MeshGL64 to
 ///output the full double precision that Manifold uses internally.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MeshGL {
 	/// Number of properties per vertex, always >= 3.
 	pub num_prop: u32,
