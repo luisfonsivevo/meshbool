@@ -3,6 +3,7 @@ use crate::common::{Polygons, Quality, SimplePolygon};
 use crate::meshboolimpl::{MeshBoolImpl, Shape};
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector3};
+use std::mem;
 
 impl MeshBool {
 	///Constructs a unit cube (edge lengths all one), by default in the first
@@ -195,6 +196,102 @@ impl MeshBool {
 			if !is_cone {
 				tri_verts.push(tri.add_scalar((n_cross_section as i32) * (n_divisions as i32)));
 			}
+		}
+
+		let mut meshbool_impl = MeshBoolImpl {
+			vert_pos,
+			..Default::default()
+		};
+
+		meshbool_impl.create_halfedges(tri_verts, Vec::new());
+		meshbool_impl.finish();
+		meshbool_impl.initialize_original(false);
+		meshbool_impl.mark_coplanar();
+		Self::from(meshbool_impl)
+	}
+
+	pub fn freebuild_extrude(
+		cross_section: impl ExactSizeIterator<Item = impl ExactSizeIterator<Item = Point2<f64>>>,
+		axis: usize,
+		mut axis_pos: f64,
+		mut height: f64,
+	) -> Self {
+		if height < 0.0 {
+			axis_pos += height;
+			height *= -1.0;
+		}
+
+		let mut vert_pos = Vec::new();
+		let mut tri_verts = Vec::new();
+		let mut n_cross_section = 0;
+		let mut polygons_indexed: PolygonsIdx = Vec::new();
+		for poly in cross_section {
+			let mut simple_indexed: SimplePolygonIdx = Vec::new();
+			let start_idx = n_cross_section;
+
+			let poly_len = poly.len();
+			for (i, poly_vert) in poly.enumerate() {
+				vert_pos.push(poly_vert.coords.insert_row(axis, axis_pos).into());
+				vert_pos.push(poly_vert.coords.insert_row(axis, axis_pos + height).into());
+
+				let loop_back = i == poly_len - 1; //loop back around to this polygon's first vertex
+
+				let cur_bottom = n_cross_section * 2;
+				let cur_top = n_cross_section * 2 + 1;
+				let nxt_bottom = if loop_back {
+					start_idx * 2
+				} else {
+					n_cross_section * 2 + 2
+				};
+				let nxt_top = if loop_back {
+					start_idx * 2 + 1
+				} else {
+					n_cross_section * 2 + 3
+				};
+
+				let left_v1 = cur_bottom;
+				let mut left_v2 = cur_top;
+				let mut left_v3 = nxt_bottom;
+				let right_v1 = nxt_top;
+				let mut right_v2 = nxt_bottom;
+				let mut right_v3 = cur_top;
+
+				if axis != 1 {
+					mem::swap(&mut left_v2, &mut left_v3);
+					mem::swap(&mut right_v2, &mut right_v3);
+				}
+
+				tri_verts.push(Vector3::new(left_v1, left_v2, left_v3));
+				tri_verts.push(Vector3::new(right_v1, right_v2, right_v3));
+
+				simple_indexed.push(PolyVert {
+					pos: poly_vert,
+					idx: n_cross_section,
+				});
+
+				n_cross_section += 1;
+			}
+
+			polygons_indexed.push(simple_indexed);
+		}
+
+		let top = triangulate_idx(&polygons_indexed, -1.0, true);
+		for tri in top {
+			let bottom_v1 = tri[0] * 2;
+			let mut bottom_v2 = tri[1] * 2;
+			let mut bottom_v3 = tri[2] * 2;
+			let top_v1 = tri[0] * 2 + 1;
+			let mut top_v2 = tri[1] * 2 + 1;
+			let mut top_v3 = tri[2] * 2 + 1;
+
+			if axis == 1 {
+				mem::swap(&mut top_v2, &mut top_v3);
+			} else {
+				mem::swap(&mut bottom_v2, &mut bottom_v3);
+			}
+
+			tri_verts.push(Vector3::new(bottom_v1, bottom_v2, bottom_v3));
+			tri_verts.push(Vector3::new(top_v1, top_v2, top_v3));
 		}
 
 		let mut meshbool_impl = MeshBoolImpl {
