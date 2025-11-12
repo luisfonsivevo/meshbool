@@ -574,6 +574,24 @@ impl MeshBool {
 	pub fn get_tolerance(&self) -> f64 {
 		self.meshbool_impl.tolerance
 	}
+
+	///Return a copy of the manifold with the set tolerance value.
+	///This performs mesh simplification when the tolerance value is increased.
+	pub fn set_tolerance(&self, tolerance: f64) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		if tolerance > meshbool_impl.tolerance {
+			meshbool_impl.tolerance = tolerance;
+			meshbool_impl.mark_coplanar();
+			meshbool_impl.simplify_topology(0);
+			meshbool_impl.finish();
+		} else {
+			// for reducing tolerance, we need to make sure it is still at least
+			// equal to epsilon.
+			meshbool_impl.tolerance = meshbool_impl.epsilon.max(tolerance);
+		}
+
+		MeshBool { meshbool_impl }
+	}
 }
 
 impl From<MeshBoolImpl> for MeshBool {
