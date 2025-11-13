@@ -19,6 +19,8 @@
 #include <manifold/manifoldc.h>
 #include <manifold/types.h>
 #include <memory> // needed for shared_ptr
+#include <utility>
+#include <vector>
 
 #include "manifold/common.h"
 // #include "manifold/vec_view.h"
@@ -38,6 +40,11 @@ namespace manifold {
  *  @brief The central classes of the library
  *  @{
  */
+
+static void _delete_manifold_meshgl(ManifoldMeshGL *m) {
+  manifold_destruct_meshgl(m);
+  free(m);
+}
 
 /**
  * @brief Mesh input/output suitable for pushing directly into graphics
@@ -111,25 +118,50 @@ namespace manifold {
  */
 template <typename Precision, typename I = uint32_t> struct MeshGLP {
   /// Number of property vertices
-  I NumVert() const { return vertProperties.size() / numProp; };
+  // I NumVert() const { return vertProperties.size() / numProp; };
   /// Number of triangles
-  I NumTri() const { return triVerts.size() / 3; };
+  inline I NumTri() const {
+    return manifold_meshgl_num_tri(this->pNode_.get());
+  };
   /// Number of properties per vertex, always >= 3.
-  I numProp = 3;
+  inline I NumProp() const {
+    return manifold_meshgl_num_prop(this->pNode_.get());
+  };
   /// Flat, GL-style interleaved list of all vertex properties: propVal =
   /// vertProperties[vert * numProp + propIdx]. The first three properties are
   /// always the position x, y, z. The stride of the array is numProp.
-  std::vector<Precision> vertProperties;
+  inline std::vector<Precision> VertProperties() const {
+    std::vector<Precision> v;
+    v.resize(manifold_meshgl_vert_properties_length(this->pNode_.get()));
+    manifold_meshgl_vert_properties(v.data(), this->pNode_.get());
+    return v;
+  }
+
   /// The vertex indices of the three triangle corners in CCW (from the outside)
   /// order, for each triangle.
-  std::vector<I> triVerts;
+  inline std::vector<I> TriVerts() const {
+    std::vector<I> v;
+    v.resize(manifold_meshgl_tri_length(this->pNode_.get()));
+    manifold_meshgl_tri_verts(v.data(), this->pNode_.get());
+    return v;
+  }
   /// Optional: A list of only the vertex indicies that need to be merged to
   /// reconstruct the manifold.
-  std::vector<I> mergeFromVert;
+  inline std::vector<I> MergeFromVert() const {
+    std::vector<I> v;
+    v.resize(manifold_meshgl_merge_length(this->pNode_.get()));
+    manifold_meshgl_merge_from_vert(v.data(), this->pNode_.get());
+    return v;
+  }
   /// Optional: The same length as mergeFromVert, and the corresponding value
   /// contains the vertex to merge with. It will have an identical position, but
   /// the other properties may differ.
-  std::vector<I> mergeToVert;
+  inline std::vector<I> MergeToVert() const {
+    std::vector<I> v;
+    v.resize(manifold_meshgl_merge_length(this->pNode_.get()));
+    manifold_meshgl_merge_to_vert(v.data(), this->pNode_.get());
+    return v;
+  }
   /// Optional: Indicates runs of triangles that correspond to a particular
   /// input mesh instance. The runs encompass all of triVerts and are sorted
   /// by runOriginalID. Run i begins at triVerts[runIndex[i]] and ends at
@@ -137,29 +169,54 @@ template <typename Precision, typename I = uint32_t> struct MeshGLP {
   /// runIndex will always be 1 longer than runOriginalID, but same length is
   /// also allowed as input: triVerts.size() will be automatically appended in
   /// this case.
-  std::vector<I> runIndex;
+  inline std::vector<I> RunIndex() const {
+    std::vector<I> v;
+    v.resize(manifold_meshgl_run_index_length(this->pNode_.get()));
+    manifold_meshgl_run_index(v.data(), this->pNode_.get());
+    return v;
+  }
   /// Optional: The OriginalID of the mesh this triangle run came from. This ID
   /// is ideal for reapplying materials to the output mesh. Multiple runs may
   /// have the same ID, e.g. representing different copies of the same input
   /// mesh. If you create an input MeshGL that you want to be able to reference
   /// as one or more originals, be sure to set unique values from ReserveIDs().
-  std::vector<uint32_t> runOriginalID;
+  inline std::vector<uint32_t> RunOriginalID() const {
+    std::vector<uint32_t> v;
+    v.resize(manifold_meshgl_run_original_id_length(this->pNode_.get()));
+    manifold_meshgl_run_original_id(v.data(), this->pNode_.get());
+    return v;
+  }
   /// Optional: For each run, a 3x4 transform is stored representing how the
   /// corresponding original mesh was transformed to create this triangle run.
   /// This matrix is stored in column-major order and the length of the overall
   /// vector is 12 * runOriginalID.size().
-  std::vector<Precision> runTransform;
+  inline std::vector<Precision> RunTransform() const {
+    std::vector<Precision> v;
+    v.resize(manifold_meshgl_run_transform_length(this->pNode_.get()));
+    manifold_meshgl_run_transform(v.data(), this->pNode_.get());
+    return v;
+  }
   /// Optional: Length NumTri, contains the source face ID this triangle comes
   /// from. Simplification will maintain all edges between triangles with
   /// different faceIDs. Input faceIDs will be maintained to the outputs, but if
   /// none are given, they will be filled in with Manifold's coplanar face
   /// calculation based on mesh tolerance.
-  std::vector<I> faceID;
+  inline std::vector<I> FaceID() const {
+    std::vector<I> v;
+    v.resize(manifold_meshgl_face_id_length(this->pNode_.get()));
+    manifold_meshgl_face_id(v.data(), this->pNode_.get());
+    return v;
+  }
   /// Optional: The X-Y-Z-W weighted tangent vectors for smooth Refine(). If
   /// non-empty, must be exactly four times as long as Mesh.triVerts. Indexed
   /// as 4 * (3 * tri + i) + j, i < 3, j < 4, representing the tangent value
   /// Mesh.triVerts[tri][i] along the CCW edge. If empty, mesh is faceted.
-  std::vector<Precision> halfedgeTangent;
+  // inline std::vector<Precision> HalfedgeTangent() const {
+  //   // std::vector<Precision> v;
+  //   // v.resize(manifold_meshgl_halfedge_tangent(this->pNode_.get()));
+  //   manifold_meshgl_halfedge_tangent(v.data(), this->pNode_.get());
+  //   return v;
+  // }
   /// Tolerance for mesh simplification. When creating a Manifold, the tolerance
   /// used will be the maximum of this and a baseline tolerance from the size of
   /// the bounding box. Any edge shorter than tolerance may be collapsed.
@@ -182,7 +239,7 @@ template <typename Precision, typename I = uint32_t> struct MeshGLP {
    * a round-trip through a file format. Constructing a Manifold from the result
    * will report an error status if it is not manifold.
    */
-  bool Merge();
+  // inline bool Merge() { return manifold_meshgl_merge};
 
   /**
    * Returns the x, y, z position of the ith vertex.
@@ -218,6 +275,12 @@ template <typename Precision, typename I = uint32_t> struct MeshGLP {
   //       halfedgeTangent[offset], halfedgeTangent[offset + 1],
   //       halfedgeTangent[offset + 2], halfedgeTangent[offset + 3]);
   // }
+  inline ManifoldMeshGL *Raw() const { return this->pNode_.get(); }
+
+  inline MeshGLP(ManifoldMeshGL *ptr) : pNode_(ptr, &_delete_manifold_meshgl) {}
+
+private:
+  mutable std::unique_ptr<ManifoldMeshGL, void (*)(ManifoldMeshGL *)> pNode_;
 };
 
 /**
@@ -228,6 +291,11 @@ using MeshGL = MeshGLP<float>;
  * @brief Double-precision, 64-bit indices - best for huge meshes.
  */
 using MeshGL64 = MeshGLP<double, uint64_t>;
+
+static void _delete_manifold_manifold(ManifoldManifold *m) {
+  manifold_destruct_manifold(m);
+  free(m);
+}
 
 /**
  * @brief This library's internal representation of an oriented, 2-manifold,
@@ -252,28 +320,42 @@ using MeshGL64 = MeshGLP<double, uint64_t>;
  * properties are not mixed, there is no requirement that channels have
  * consistent meaning between different inputs.
  */
+static ManifoldManifold *_from_meshgl(const MeshGL &mesh) {
+  auto ptr = malloc(manifold_manifold_size());
+  manifold_of_meshgl(ptr, mesh.Raw());
+  // this->pNode_ =
+  //     std::unique_ptr<ManifoldManifold, void (*)(ManifoldManifold *)>(
+  //         static_cast<ManifoldManifold *>(ptr), &_delete_manifold_manifold);
+  return static_cast<ManifoldManifold *>(ptr);
+}
+
 class Manifold {
 public:
   /** @name Basics
    *  Copy / move / assignment
    */
   ///@{
-  Manifold();
-  ~Manifold();
-  Manifold(const Manifold &other);
-  Manifold &operator=(const Manifold &other);
-  Manifold(Manifold &&) noexcept;
-  Manifold &operator=(Manifold &&) noexcept;
+  // Manifold();
+  // ~Manifold();
+  // Manifold(const Manifold &other);
+  // Manifold &operator=(const Manifold &other);
+  // Manifold(Manifold &&) noexcept;
+  // Manifold &operator=(Manifold &&) noexcept;
   ///@}
 
   /** @name Input & Output
    *  Create and retrieve arbitrary manifolds
    */
   ///@{
-  Manifold(const MeshGL &);
-  Manifold(const MeshGL64 &);
-  MeshGL GetMeshGL(int normalIdx = -1) const;
-  MeshGL64 GetMeshGL64(int normalIdx = -1) const;
+  inline Manifold(const MeshGL &mesh)
+      : pNode_(_from_meshgl(mesh), &_delete_manifold_manifold) {}
+  // Manifold(const MeshGL64 &);
+  inline MeshGL GetMeshGL(int normalIdx = -1) const {
+    auto ptr = malloc(manifold_meshgl_size());
+    manifold_get_meshgl(ptr, this->pNode_.get());
+    return MeshGL(static_cast<ManifoldMeshGL *>(ptr));
+  }
+  // MeshGL64 GetMeshGL64(int normalIdx = -1) const;
   ///@}
 
   /** @name Constructors
@@ -281,7 +363,11 @@ public:
    */
   ///@{
   std::vector<Manifold> Decompose() const;
-  static Manifold Compose(const std::vector<Manifold> &);
+  //  inline static Manifold Compose(const std::vector<Manifold> &) {
+  //    auto ptr = malloc(manifold_manifold_size());
+  //    manifold_compose(ptr, size.x, size.y, size.z, center);
+  //    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  // }
   // static Manifold Tetrahedron();
   inline static Manifold Cube(vec3 size = vec3(1.0), bool center = false) {
     auto ptr = malloc(manifold_manifold_size());
@@ -341,7 +427,51 @@ public:
    *  Details of the manifold
    */
   ///@{
-  Error Status() const;
+  inline Error Status() const {
+    Error e = Error::NoError;
+    switch (manifold_status(this->pNode_.get())) {
+    case MANIFOLD_NO_ERROR:
+      break;
+    case MANIFOLD_NON_FINITE_VERTEX:
+      e = Error::NonFiniteVertex;
+      break;
+    case MANIFOLD_NOT_MANIFOLD:
+      e = Error::NotManifold;
+      break;
+    case MANIFOLD_VERTEX_INDEX_OUT_OF_BOUNDS:
+      e = Error::VertexOutOfBounds;
+      break;
+    case MANIFOLD_PROPERTIES_WRONG_LENGTH:
+      e = Error::PropertiesWrongLength;
+      break;
+    case MANIFOLD_MISSING_POSITION_PROPERTIES:
+      e = Error::MissingPositionProperties;
+      break;
+    case MANIFOLD_MERGE_VECTORS_DIFFERENT_LENGTHS:
+      e = Error::MergeVectorsDifferentLengths;
+      break;
+    case MANIFOLD_MERGE_INDEX_OUT_OF_BOUNDS:
+      e = Error::MergeIndexOutOfBounds;
+      break;
+    case MANIFOLD_TRANSFORM_WRONG_LENGTH:
+      e = Error::TransformWrongLength;
+      break;
+    case MANIFOLD_RUN_INDEX_WRONG_LENGTH:
+      e = Error::RunIndexWrongLength;
+      break;
+    case MANIFOLD_FACE_ID_WRONG_LENGTH:
+      e = Error::FaceIDWrongLength;
+      break;
+    case MANIFOLD_INVALID_CONSTRUCTION:
+      e = Error::InvalidConstruction;
+      break;
+    case MANIFOLD_RESULT_TOO_LARGE:
+      e = Error::ResultTooLarge;
+      break;
+    };
+    return e;
+  }
+
   inline bool IsEmpty() const { return manifold_is_empty(this->pNode_.get()); }
   inline size_t NumVert() const {
     return manifold_num_vert(this->pNode_.get());
@@ -357,16 +487,23 @@ public:
   //   return manifold_num_prop(this->pNode_.get());
   // }
   // Box BoundingBox() const;
-  int Genus() const;
-  double GetTolerance() const;
+  inline int Genus() const { return manifold_genus(this->pNode_.get()); }
+  //  inline double GetTolerance() const {
+  //    return manifold_(this->pNode_.get());
+  // }
   ///@}
 
   /** @name Measurement
    */
   ///@{
-  double SurfaceArea() const;
-  double Volume() const;
-  double MinGap(const Manifold &other, double searchLength) const;
+  inline double SurfaceArea() const {
+    return manifold_surface_area(this->pNode_.get());
+  }
+  inline double Volume() const { return manifold_volume(this->pNode_.get()); }
+  inline double MinGap(const Manifold &other, double searchLength) const {
+    return manifold_min_gap(this->pNode_.get(), other.pNode_.get(),
+                            searchLength);
+  }
   ///@}
 
   /** @name Mesh ID
@@ -382,7 +519,9 @@ public:
     manifold_as_original(ptr, this->pNode_.get());
     return Manifold(static_cast<ManifoldManifold *>(ptr));
   }
-  static uint32_t ReserveIDs(uint32_t);
+  inline static uint32_t ReserveIDs(uint32_t n) {
+    return manifold_reserve_ids(n);
+  }
   ///@}
 
   /** @name Transformations
@@ -413,7 +552,7 @@ public:
   }
   // Manifold Warp(std::function<void(vec3 &)>) const;
   // Manifold WarpBatch(std::function<void(VecView<vec3>)>) const;
-  Manifold SetTolerance(double) const;
+  // Manifold SetTolerance(double) const;
   // Manifold Simplify(double tolerance = 0) const;
   ///@}
 
@@ -457,21 +596,51 @@ public:
     *this = *this ^ Q;
     return *this;
   }
-  std::pair<Manifold, Manifold> Split(const Manifold &) const;
-  // std::pair<Manifold, Manifold> SplitByPlane(vec3 normal,
-  //                                            double originOffset) const;
-  // Manifold TrimByPlane(vec3 normal, double originOffset) const;
+  inline std::pair<Manifold, Manifold> Split(const Manifold &other) const {
+    auto ptr1 = malloc(manifold_manifold_size());
+    auto ptr2 = malloc(manifold_manifold_size());
+    manifold_split(ptr1, ptr2, this->pNode_.get(), other.pNode_.get());
+    return std::make_pair(Manifold(static_cast<ManifoldManifold *>(ptr1)),
+                          Manifold(static_cast<ManifoldManifold *>(ptr2)));
+  }
+  inline std::pair<Manifold, Manifold> SplitByPlane(vec3 normal,
+                                                    double originOffset) const {
+    auto ptr1 = malloc(manifold_manifold_size());
+    auto ptr2 = malloc(manifold_manifold_size());
+    manifold_split_by_plane(ptr1, ptr2, this->pNode_.get(), normal.x, normal.y,
+                            normal.z, originOffset);
+    return std::make_pair(Manifold(static_cast<ManifoldManifold *>(ptr1)),
+                          Manifold(static_cast<ManifoldManifold *>(ptr2)));
+  }
+  inline Manifold TrimByPlane(vec3 normal, double originOffset) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_trim_by_plane(ptr, this->pNode_.get(), normal.x, normal.y,
+                           normal.z, originOffset);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
   ///@}
 
   /** @name Properties
    * Create and modify vertex properties.
    */
   ///@{
-  // Manifold SetProperties(
+  // inline Manifold SetProperties(
   //     int numProp,
-  //     std::function<void(double *, vec3, const double *)> propFunc) const;
-  Manifold CalculateCurvature(int gaussianIdx, int meanIdx) const;
-  Manifold CalculateNormals(int normalIdx, double minSharpAngle = 60) const;
+  //     std::function<void(double *, vec3, const double *)> propFunc) const {
+  //   auto ptr = malloc(manifold_manifold_size());
+  // }
+  inline Manifold CalculateCurvature(int gaussianIdx, int meanIdx) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_calculate_curvature(ptr, this->pNode_.get(), gaussianIdx, meanIdx);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
+  inline Manifold CalculateNormals(int normalIdx,
+                                   double minSharpAngle = 60) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_calculate_normals(ptr, this->pNode_.get(), normalIdx,
+                               minSharpAngle);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
   ///@}
 
   /** @name Smoothing
@@ -479,13 +648,40 @@ public:
    * triangle count.
    */
   ///@{
-  Manifold Refine(int) const;
-  Manifold RefineToLength(double) const;
-  Manifold RefineToTolerance(double) const;
-  Manifold SmoothByNormals(int normalIdx) const;
-  Manifold SmoothOut(double minSharpAngle = 60, double minSmoothness = 0) const;
-  // static Manifold Smooth(const MeshGL &,
-  //                        const std::vector<Smoothness> &sharpenedEdges = {});
+  inline Manifold Refine(int i) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_refine(ptr, this->pNode_.get(), i);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
+  inline Manifold RefineToLength(double l) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_refine_to_length(ptr, this->pNode_.get(), l);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
+  inline Manifold RefineToTolerance(double t) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_refine_to_tolerance(ptr, this->pNode_.get(), t);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
+  inline Manifold SmoothByNormals(int normalIdx) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_smooth_by_normals(ptr, this->pNode_.get(), normalIdx);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
+  inline Manifold SmoothOut(double minSharpAngle = 60,
+                            double minSmoothness = 0) const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_smooth_out(ptr, this->pNode_.get(), minSharpAngle, minSmoothness);
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
+  // inline static Manifold
+  // Smooth(const MeshGL &mesh,
+  //        const std::vector<Smoothness> &sharpenedEdges = {}) {
+  //   auto ptr = malloc(manifold_manifold_size());
+  //   manifold_smooth(ptr, mesh.Raw(), size_t *half_edges, double *smoothness,
+  //                   size_t n_idxs);
+  //   return Manifold(static_cast<ManifoldManifold *>(ptr));
+  // }
   // static Manifold Smooth(const MeshGL64 &,
   //                        const std::vector<Smoothness> &sharpenedEdges = {});
   ///@}
@@ -493,57 +689,70 @@ public:
   /** @name Convex Hull
    */
   ///@{
-  Manifold Hull() const;
-  static Manifold Hull(const std::vector<Manifold> &manifolds);
-  // static Manifold Hull(const std::vector<vec3> &pts);
-  ///@}
+  inline Manifold Hull() const {
+    auto ptr = malloc(manifold_manifold_size());
+    manifold_hull(ptr, this->pNode_.get());
+    return Manifold(static_cast<ManifoldManifold *>(ptr));
+  }
+//  static inline Manifold Hull(const std::vector<Manifold> &manifolds) {
+//    auto ptr = malloc(manifold_manifold_size());
+//    manifold_batch_hull(ptr, this->pNode_.get());
+//    return Manifold(static_cast<ManifoldManifold *>(ptr));
+// }
+// inline static Manifold Hull(const std::vector<vec3> &pts) {
+//     auto ptr = malloc(manifold_manifold_size());
+// 		for
+// 		manifold_hull_pts(ptr, ManifoldVec3 *ps, size_t length)
+//     return Manifold(static_cast<ManifoldManifold *>(ptr));
+// 	}
+///@}
 
-  /** @name Debugging I/O
-   * Self-contained mechanism for reading and writing high precision Manifold
-   * data.  Write function creates special-purpose OBJ files, and Read function
-   * reads them in.  Be warned these are not (and not intended to be)
-   * full-featured OBJ importers/exporters.  Their primary use is to extract
-   * accurate Manifold data for debugging purposes - writing out any info
-   * needed to accurately reproduce a problem case's state.  Consequently, they
-   * may store and process additional data in comments that other OBJ parsing
-   * programs won't understand.
-   *
-   * The "format" read and written by these functions is not guaranteed to be
-   * stable from release to release - it will be modified as needed to ensure
-   * it captures information needed for debugging.  The only API guarantee is
-   * that the ReadOBJ method in a given build/release will read in the output
-   * of the WriteOBJ method produced by that release.
-   *
-   * To work with a file, the caller should prepare the ifstream/ostream
-   * themselves, as follows:
-   *
-   * Reading:
-   * @code
-   * std::ifstream ifile;
-   * ifile.open(filename);
-   * if (ifile.is_open()) {
-   *   Manifold obj_m = Manifold::ReadOBJ(ifile);
-   *   ifile.close();
-   *   if (obj_m.Status() != Manifold::Error::NoError) {
-   *      std::cerr << "Failed reading " << filename << ":\n";
-   *      std::cerr << Manifold::ToString(ob_m.Status()) << "\n";
-   *   }
-   *   ifile.close();
-   * }
-   * @endcode
-   *
-   * Writing:
-   * @code
-   * std::ofstream ofile;
-   * ofile.open(filename);
-   * if (ofile.is_open()) {
-   *    if (!m.WriteOBJ(ofile)) {
-   *       std::cerr << "Failed writing to " << filename << "\n";
-   *    }
-   * }
-   * ofile.close();
-   * @endcode
-   */
+/** @name Debugging I/O
+ * Self-contained mechanism for reading and writing high precision Manifold
+ * data.  Write function creates special-purpose OBJ files, and Read function
+ * reads them in.  Be warned these are not (and not intended to be)
+ * full-featured OBJ importers/exporters.  Their primary use is to extract
+ * accurate Manifold data for debugging purposes - writing out any info
+ * needed to accurately reproduce a problem case's state.  Consequently, they
+ * may store and process additional data in comments that other OBJ parsing
+ * programs won't understand.
+ *
+ * The "format" read and written by these functions is not guaranteed to be
+ * stable from release to release - it will be modified as needed to ensure
+ * it captures information needed for debugging.  The only API guarantee is
+ * that the ReadOBJ method in a given build/release will read in the output
+ * of the WriteOBJ method produced by that release.
+ *
+ * To work with a file, the caller should prepare the ifstream/ostream
+ * themselves, as follows:
+ *
+ * Reading:
+ * @code
+ * std::ifstream ifile;
+ * ifile.open(filename);
+ * if (ifile.is_open()) {
+ *   Manifold obj_m = Manifold::ReadOBJ(ifile);
+ *   ifile.close();
+ *   if (obj_m.Status() != Manifold::Error::NoError) {
+ *      std::cerr << "Failed reading " << filename << ":\n";
+ *      std::cerr << Manifold::ToString(ob_m.Status()) << "\n";
+ *   }
+ *   ifile.close();
+ * }
+ * @endcode
+ *
+ * Writing:
+ * @code
+ * std::ofstream ofile;
+ * ofile.open(filename);
+ * if (ofile.is_open()) {
+ *    if (!m.WriteOBJ(ofile)) {
+ *       std::cerr << "Failed writing to " << filename << "\n";
+ *    }
+ * }
+ * ofile.close();
+ * @endcode
+ */
 #ifdef MANIFOLD_DEBUG
   static Manifold ReadOBJ(std::istream &stream);
   bool WriteOBJ(std::ostream &stream) const;
@@ -555,12 +764,16 @@ public:
   ///@{
   bool MatchesTriNormals() const;
   size_t NumDegenerateTris() const;
-  double GetEpsilon() const;
+  inline double GetEpsilon() const {
+    return manifold_epsilon(this->pNode_.get());
+  }
   ///@}
 
 private:
-  mutable std::unique_ptr<ManifoldManifold> pNode_;
-  inline Manifold(ManifoldManifold *ptr) : pNode_(ptr) {}
+  mutable std::unique_ptr<ManifoldManifold, void (*)(ManifoldManifold *)>
+      pNode_;
+  inline Manifold(ManifoldManifold *ptr)
+      : pNode_(ptr, &_delete_manifold_manifold) {}
 };
 /** @} */
 
