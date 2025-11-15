@@ -31,6 +31,85 @@ mod tri_dis;
 mod utils;
 mod vec;
 
+#[cfg(feature = "zngur")]
+mod generated {
+	include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+
+	trait PointGetter {
+		type T;
+		fn get_x(&self) -> Self::T;
+		fn get_y(&self) -> Self::T;
+		fn get_z(&self) -> Self::T;
+	}
+
+	impl PointGetter for ::nalgebra::Point3<f64> {
+		type T = f64;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	trait ManifoldErrorExport {
+		fn is_no_error(&self) -> bool;
+		fn is_non_finite_vertex(&self) -> bool;
+		fn is_invalid_construction(&self) -> bool;
+		fn is_result_too_large(&self) -> bool;
+		fn is_not_manifold(&self) -> bool;
+		fn is_missing_position_properties(&self) -> bool;
+		fn is_merge_vectors_different_lengths(&self) -> bool;
+		fn is_transform_wrong_length(&self) -> bool;
+		fn is_run_index_wrong_length(&self) -> bool;
+		fn is_face_id_wrong_length(&self) -> bool;
+		fn is_merge_index_out_of_bounds(&self) -> bool;
+		fn is_vertex_out_of_bounds(&self) -> bool;
+	}
+
+	impl ManifoldErrorExport for super::ManifoldError {
+		fn is_no_error(&self) -> bool {
+			*self == Self::NoError
+		}
+		fn is_non_finite_vertex(&self) -> bool {
+			*self == Self::NonFiniteVertex
+		}
+		fn is_invalid_construction(&self) -> bool {
+			*self == Self::InvalidConstruction
+		}
+		fn is_result_too_large(&self) -> bool {
+			*self == Self::ResultTooLarge
+		}
+		fn is_not_manifold(&self) -> bool {
+			*self == Self::NotManifold
+		}
+		fn is_missing_position_properties(&self) -> bool {
+			*self == Self::MissingPositionProperties
+		}
+		fn is_merge_vectors_different_lengths(&self) -> bool {
+			*self == Self::MergeVectorsDifferentLengths
+		}
+		fn is_transform_wrong_length(&self) -> bool {
+			*self == Self::TransformWrongLength
+		}
+		fn is_run_index_wrong_length(&self) -> bool {
+			*self == Self::RunIndexWrongLength
+		}
+		fn is_face_id_wrong_length(&self) -> bool {
+			*self == Self::FaceIDWrongLength
+		}
+		fn is_merge_index_out_of_bounds(&self) -> bool {
+			*self == Self::MergeIndexOutOfBounds
+		}
+		fn is_vertex_out_of_bounds(&self) -> bool {
+			*self == Self::VertexOutOfBounds
+		}
+	}
+}
+
 #[test]
 fn test() {
 	use nalgebra::Vector3;
