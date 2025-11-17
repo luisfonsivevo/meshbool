@@ -1,0 +1,95 @@
+{
+  "name": "manifold-3d",
+  "version": "3.2.1",
+  "description": "Geometry library for topological robustness",
+  "main": "manifold.js",
+  "bin": {
+    "manifold-cad": "./bin/manifold-cad"
+  },
+  "scripts": {
+    "docs": "npx typedoc",
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:dev": "vitest"
+  },
+  "files": [
+    "manifold.js",
+    "manifold.wasm",
+    "manifold.d.ts",
+    "manifold-encapsulated-types.d.ts",
+    "manifold-global-types.d.ts",
+    "bin/manifold-cad",
+    "lib/animation.d.ts",
+    "lib/animation.js",
+    "lib/debug.d.ts",
+    "lib/debug.js",
+    "lib/math.js",
+    "lib/math.d.ts",
+    "lib/evaluate.d.ts",
+    "lib/evaluate.js",
+    "lib/scene-builder.d.ts",
+    "lib/scene-builder.js",
+    "lib/gltf-io.d.ts",
+    "lib/gltf-io.js",
+    "lib/3mf-export.d.ts",
+    "lib/export-3mf.d.ts",
+    "lib/export-3mf.js",
+    "lib/export-gltf.d.ts",
+    "lib/export-gltf.js",
+    "lib/manifold-gltf.d.ts",
+    "lib/manifold-gltf.js",
+    "lib/material.d.ts",
+    "lib/material.js",
+    "lib/util.js",
+    "lib/util.d.ts",
+    "lib/wasm.js",
+    "lib/wasm.d.ts",
+    "lib/worker.js",
+    "lib/worker.d.ts",
+    "types/manifoldCAD.d.ts"
+  ],
+  "typings": "manifold.d.ts",
+  "types": "manifold.d.ts",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elalish/manifold.git"
+  },
+  "keywords": [
+    "3D",
+    "mesh",
+    "manifold",
+    "geometry",
+    "solid",
+    "CAD",
+    "triangle",
+    "SDF"
+  ],
+  "contributors": [
+    "Emmett Lalish <elalish>",
+    "Chun Kit LAM <pca006132>"
+  ],
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/elalish/manifold/issues"
+  },
+  "homepage": "https://github.com/elalish/manifold#readme",
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "typedoc": "^0.28.10",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.2.0",
+    "@gltf-transform/extensions": "^4.2.0",
+    "@gltf-transform/functions": "^4.2.0",
+    "@jscadui/3mf-export": "^0.5.0",
+    "commander": "^13.1.0",
+    "es-module-lexer": "^1.7.0",
+    "fflate": "^0.8.0",
+    "gl-matrix": "^3.4.3"
+  }
+}
