@@ -134,6 +134,7 @@ name = "meshbool"
 version = "0.0.0"
 dependencies = [
  "nalgebra",
+ "num-traits",
 ]
 
 [[package]]

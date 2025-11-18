@@ -7,3 +7,4 @@ edition = "2024"
 
 [dependencies]
 nalgebra = { version = "0.34", default-features = false, features = ["std"] }
+num-traits = "0.2.19"
