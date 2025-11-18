@@ -210,15 +210,77 @@ where
 	}
 }
 
-impl LossyFrom<i32> for usize {
-	fn lossy_from(other: i32) -> Self {
-		other as usize
-	}
+pub trait LossyAs {
+	fn lossy_as_usize(self) -> usize;
 }
 
-impl LossyFrom<usize> for usize {
-	fn lossy_from(other: usize) -> Self {
-		other
+pub trait LossyInt
+where
+	Self: Copy
+		+ LossyFrom<usize>
+		+ LossyFrom<u32>
+		+ LossyFrom<i32>
+		+ LossyInto<i32>
+		+ LossyInto<usize>
+		+ LossyAs
+		+ std::ops::Sub<Output = Self>
+		+ std::ops::Mul<Output = Self>
+		+ std::cmp::Eq
+		+ std::cmp::PartialOrd
+		+ std::cmp::PartialEq
+		+ std::cmp::Ord,
+{
+}
+
+pub trait LossyFloat
+where
+	Self: Copy + LossyFrom<f64> + LossyFrom<f32> + LossyInto<f64> + LossyInto<f32>,
+{
+	fn is_finite(self) -> bool;
+}
+
+macro_rules! lossy_from {
+	( $t:ty, [ $( $f:ty ),* ] ) => {
+		$(
+			impl LossyFrom<$f> for $t {
+				fn lossy_from(other: $f) -> Self {
+					other as Self
+				}
+			}
+		)*
+	};
+}
+
+macro_rules! lossy_int {
+	($t:ty) => {
+		lossy_from!($t, [i32, u32, u64, usize]);
+		impl LossyAs for $t {
+			fn lossy_as_usize(self) -> usize {
+				self as usize
+			}
+		}
+	};
+}
+
+lossy_int!(usize);
+lossy_int!(i32);
+lossy_int!(u32);
+lossy_int!(u64);
+lossy_from!(f64, [f32, f64]);
+lossy_from!(f32, [f32, f64]);
+
+impl LossyInt for u64 {}
+impl LossyInt for u32 {}
+impl LossyInt for i32 {}
+
+impl LossyFloat for f64 {
+	fn is_finite(self) -> bool {
+		f64::is_finite(self)
+	}
+}
+impl LossyFloat for f32 {
+	fn is_finite(self) -> bool {
+		f32::is_finite(self)
 	}
 }
 
