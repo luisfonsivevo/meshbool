@@ -2,6 +2,7 @@ use crate::boolean3::Boolean3;
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
+use num_traits::NumCast;
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
 pub use crate::common::AABB;
@@ -113,23 +114,23 @@ fn test() {
 ///MeshGL is an alias for the standard single-precision version. Use MeshGL64 to
 ///output the full double precision that Manifold uses internally.
 #[derive(Debug, Clone)]
-pub struct MeshGL {
+pub struct MeshGLP<Precision, I> {
 	/// Number of properties per vertex, always >= 3.
-	pub num_prop: u32,
+	pub num_prop: I,
 	/// Flat, GL-style interleaved list of all vertex properties: propVal =
 	/// vertProperties[vert * numProp + propIdx]. The first three properties are
 	/// always the position x, y, z. The stride of the array is numProp.
-	pub vert_properties: Vec<f32>,
+	pub vert_properties: Vec<Precision>,
 	/// The vertex indices of the three triangle corners in CCW (from the outside)
 	/// order, for each triangle.
-	pub tri_verts: Vec<u32>,
+	pub tri_verts: Vec<I>,
 	/// Optional: A list of only the vertex indicies that need to be merged to
 	/// reconstruct the manifold.
-	pub merge_from_vert: Vec<u32>,
+	pub merge_from_vert: Vec<I>,
 	/// Optional: The same length as mergeFromVert, and the corresponding value
 	/// contains the vertex to merge with. It will have an identical position, but
 	/// the other properties may differ.
-	pub merge_to_vert: Vec<u32>,
+	pub merge_to_vert: Vec<I>,
 	/// Optional: Indicates runs of triangles that correspond to a particular
 	/// input mesh instance. The runs encompass all of triVerts and are sorted
 	/// by runOriginalID. Run i begins at triVerts[runIndex[i]] and ends at
@@ -137,7 +138,7 @@ pub struct MeshGL {
 	/// runIndex will always be 1 longer than runOriginalID, but same length is
 	/// also allowed as input: triVerts.size() will be automatically appended in
 	/// this case.
-	pub run_index: Vec<u32>,
+	pub run_index: Vec<I>,
 	/// Optional: The OriginalID of the mesh this triangle run came from. This ID
 	/// is ideal for reapplying materials to the output mesh. Multiple runs may
 	/// have the same ID, e.g. representing different copies of the same input
@@ -148,25 +149,25 @@ pub struct MeshGL {
 	/// corresponding original mesh was transformed to create this triangle run.
 	/// This matrix is stored in column-major order and the length of the overall
 	/// vector is 12 * runOriginalID.size().
-	pub run_transform: Vec<f32>,
+	pub run_transform: Vec<Precision>,
 	/// Optional: Length NumTri, contains the source face ID this triangle comes
 	/// from. Simplification will maintain all edges between triangles with
 	/// different faceIDs. Input faceIDs will be maintained to the outputs, but if
 	/// none are given, they will be filled in with Manifold's coplanar face
 	/// calculation based on mesh tolerance.
-	pub face_id: Vec<u32>,
+	pub face_id: Vec<I>,
 	/// Tolerance for mesh simplification. When creating a Manifold, the tolerance
 	/// used will be the maximum of this and a baseline tolerance from the size of
 	/// the bounding box. Any edge shorter than tolerance may be collapsed.
 	/// Tolerance may be enlarged when floating point error accumulates.
-	pub tolerance: f32,
+	pub tolerance: Precision,
 }
 
-impl Default for MeshGL {
+impl<A: From<f32>, I: From<u8>> Default for MeshGLP<A, I> {
 	fn default() -> Self {
 		Self {
-			num_prop: 3,
-			tolerance: 0.0,
+			num_prop: 3.into(),
+			tolerance: 0.0.into(),
 			vert_properties: Vec::default(),
 			tri_verts: Vec::default(),
 			merge_from_vert: Vec::default(),
@@ -179,15 +180,18 @@ impl Default for MeshGL {
 	}
 }
 
-impl MeshGL {
-	pub fn num_vert(&self) -> usize {
-		self.vert_properties.len() / self.num_prop as usize
+impl<A: Copy, I: num_traits::int::PrimInt + NumCast> MeshGLP<A, I> {
+	pub fn num_vert(&self) -> I {
+		I::from(self.vert_properties.len()).unwrap() / self.num_prop
 	}
 
-	pub fn num_tri(&self) -> usize {
-		self.tri_verts.len() / 3
+	pub fn num_tri(&self) -> I {
+		I::from(self.tri_verts.len() / 3).unwrap()
 	}
 }
+
+pub type MeshGL = MeshGLP<f32, u32>;
+pub type MeshGL64 = MeshGLP<f64, u64>;
 
 #[derive(Default, Debug, Clone)]
 pub struct MeshBool {
@@ -312,7 +316,10 @@ impl MeshBool {
 		Self::from(Boolean3::new(&self.meshbool_impl, &other.meshbool_impl, op).result(op))
 	}
 
-	fn get_mesh_gl_impl(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGL {
+	fn get_mesh_gl_impl<F: num_traits::float::FloatCore, I: num_traits::int::PrimInt>(
+		meshbool_impl: &MeshBoolImpl,
+		normal_idx: i32,
+	) -> MeshGLP<F, I> {
 		let num_prop = meshbool_impl.num_prop();
 		let num_vert = meshbool_impl.num_prop_vert();
 		let num_tri = meshbool_impl.num_tri();
@@ -320,15 +327,18 @@ impl MeshBool {
 		let is_original = meshbool_impl.mesh_relation.original_id >= 0;
 		let update_normals = !is_original && normal_idx >= 0;
 
-		let out_num_prop: u32 = 3 + num_prop as u32;
-		let tolerance = meshbool_impl
-			.tolerance
-			.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale()) as f32;
+		let out_num_prop: I = I::from(3 + num_prop).unwrap();
+		let tolerance = F::from(
+			meshbool_impl
+				.tolerance
+				.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale()),
+		)
+		.unwrap();
 
-		let mut tri_verts: Vec<u32> = vec![0; 3 * num_tri];
+		let mut tri_verts: Vec<I> = vec![I::zero(); 3 * num_tri];
 
 		// Sort the triangles into runs
-		let mut face_id: Vec<u32> = vec![0; num_tri];
+		let mut face_id: Vec<I> = vec![I::zero(); num_tri];
 		let mut tri_new2old: Vec<_> = (0..num_tri).map(|i| i as i32).collect();
 		let tri_ref = &meshbool_impl.mesh_relation.tri_ref;
 		// Don't sort originals - keep them in order
@@ -337,13 +347,13 @@ impl MeshBool {
 				.sort_by_key(|&i| (tri_ref[i as usize].original_id, tri_ref[i as usize].mesh_id));
 		}
 
-		let mut run_index: Vec<u32> = Vec::new();
+		let mut run_index: Vec<I> = Vec::new();
 		let mut run_original_id: Vec<u32> = Vec::new();
-		let mut run_transform: Vec<f32> = Vec::new();
+		let mut run_transform: Vec<F> = Vec::new();
 
 		let mut run_normal_transform: Vec<Matrix3<f64>> = Vec::new();
 		let mut add_run = |tri, rel: Relation| {
-			run_index.push((3 * tri) as u32);
+			run_index.push(I::from(3 * tri).unwrap());
 			run_original_id.push(rel.original_id as u32);
 			if update_normals {
 				run_normal_transform.push(
@@ -354,7 +364,7 @@ impl MeshBool {
 			if !is_original {
 				for col in 0..4 {
 					for row in 0..3 {
-						run_transform.push(rel.transform[(row, col)] as f32)
+						run_transform.push(F::from(rel.transform[(row, col)]).unwrap())
 					}
 				}
 			}
@@ -367,13 +377,15 @@ impl MeshBool {
 			let tri_ref = tri_ref[old_tri];
 			let mesh_id = tri_ref.mesh_id;
 
-			face_id[tri] = (if tri_ref.face_id >= 0 {
+			face_id[tri] = I::from(if tri_ref.face_id >= 0 {
 				tri_ref.face_id
 			} else {
 				tri_ref.coplanar_id
-			}) as u32;
+			})
+			.unwrap();
 			for i in 0..3 {
-				tri_verts[3 * tri + i] = meshbool_impl.halfedge[3 * old_tri + i].start_vert as u32;
+				tri_verts[3 * tri + i] =
+					I::from(meshbool_impl.halfedge[3 * old_tri + i].start_vert).unwrap();
 			}
 
 			if mesh_id != last_id {
@@ -389,19 +401,19 @@ impl MeshBool {
 			add_run(num_tri, pair.1);
 		}
 
-		run_index.push((3 * num_tri) as u32);
+		run_index.push(I::from(3 * num_tri).unwrap());
 
 		// Early return for no props
 		if num_prop == 0 {
-			let mut vert_properties: Vec<f32> = vec![0.0; 3 * num_vert];
+			let mut vert_properties: Vec<F> = vec![F::from(0.0).unwrap(); 3 * num_vert];
 			for i in 0..num_vert {
 				let v = meshbool_impl.vert_pos[i];
-				vert_properties[3 * i] = v.x as f32;
-				vert_properties[3 * i + 1] = v.y as f32;
-				vert_properties[3 * i + 2] = v.z as f32;
+				vert_properties[3 * i] = F::from(v.x).unwrap();
+				vert_properties[3 * i + 1] = F::from(v.y).unwrap();
+				vert_properties[3 * i + 2] = F::from(v.z).unwrap();
 			}
 
-			return MeshGL {
+			return MeshGLP {
 				num_prop: out_num_prop,
 				vert_properties,
 				tri_verts,
@@ -418,25 +430,28 @@ impl MeshBool {
 		// Duplicate verts with different props
 		let mut vert2idx: Vec<i32> = vec![-1; meshbool_impl.num_vert()];
 		let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); meshbool_impl.num_vert()];
-		let mut vert_properties: Vec<f32> = Vec::with_capacity(num_vert * (out_num_prop as usize));
+		let mut vert_properties: Vec<F> =
+			Vec::with_capacity(num_vert * (out_num_prop.to_usize().unwrap()));
 
-		let mut merge_from_vert: Vec<u32> = Vec::new();
-		let mut merge_to_vert: Vec<u32> = Vec::new();
+		let mut merge_from_vert: Vec<I> = Vec::new();
+		let mut merge_to_vert: Vec<I> = Vec::new();
 
 		for run in 0..run_original_id.len() {
-			for tri in (run_index[run] / 3)..run_index[run + 1] / 3 {
+			for tri in
+				(run_index[run].to_usize().unwrap() / 3)..run_index[run + 1].to_usize().unwrap() / 3
+			{
 				let tri = tri as usize;
 				for i in 0..3 {
 					let prop =
 						meshbool_impl.halfedge[3 * (tri_new2old[tri] as usize) + i].prop_vert;
-					let vert = tri_verts[3 * tri + i] as usize;
+					let vert = tri_verts[3 * tri + i].to_usize().unwrap();
 
 					let bin = &mut vert_prop_pair[vert];
 					let mut b_found = false;
 					for b in bin.iter() {
 						if b.x == prop {
 							b_found = true;
-							tri_verts[3 * tri + i] = b.y as u32;
+							tri_verts[3 * tri + i] = I::from(b.y).unwrap();
 							break;
 						}
 					}
@@ -444,44 +459,47 @@ impl MeshBool {
 					if b_found {
 						continue;
 					}
-					let idx = vert_properties.len() / (out_num_prop as usize);
-					tri_verts[3 * tri + i] = idx as u32;
+					let idx = vert_properties.len() / (out_num_prop.to_usize().unwrap());
+					tri_verts[3 * tri + i] = I::from(idx).unwrap();
 					bin.push(Vector2::new(prop, idx as i32));
 
 					for p in 0..3 {
-						vert_properties.push(meshbool_impl.vert_pos[vert][p] as f32);
+						vert_properties.push(F::from(meshbool_impl.vert_pos[vert][p]).unwrap());
 					}
 					for p in 0..num_prop {
-						vert_properties
-							.push(meshbool_impl.properties[(prop as usize) * num_prop + p] as f32);
+						vert_properties.push(
+							F::from(meshbool_impl.properties[(prop as usize) * num_prop + p])
+								.unwrap(),
+						);
 					}
 
 					if update_normals {
 						let mut normal = Vector3::<f64>::default();
-						let start = vert_properties.len() - (out_num_prop as usize);
+						let start = vert_properties.len() - (out_num_prop.to_usize().unwrap());
 						for i in 0..3 {
-							normal[i] =
-								vert_properties[start + 3 + (normal_idx as usize) + i] as f64;
+							normal[i] = vert_properties[start + 3 + (normal_idx as usize) + i]
+								.to_f64()
+								.unwrap();
 						}
 
 						normal = (run_normal_transform[run] * normal).normalize();
 						for i in 0..3 {
 							vert_properties[start + 3 + (normal_idx as usize) + i] =
-								normal[i] as f32;
+								F::from(normal[i]).unwrap();
 						}
 					}
 
 					if vert2idx[vert] == -1 {
 						vert2idx[vert] = idx as i32;
 					} else {
-						merge_from_vert.push(idx as u32);
-						merge_to_vert.push(vert2idx[vert] as u32);
+						merge_from_vert.push(I::from(idx).unwrap());
+						merge_to_vert.push(I::from(vert2idx[vert]).unwrap());
 					}
 				}
 			}
 		}
 
-		MeshGL {
+		MeshGLP {
 			num_prop: out_num_prop,
 			vert_properties,
 			tri_verts,
@@ -511,7 +529,15 @@ impl MeshBool {
 		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
 	}
 
+	pub fn get_mesh_gl64(&self, normal_idx: i32) -> MeshGL64 {
+		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
+	}
+
 	pub fn from_meshgl(mesh_gl: MeshGL) -> Self {
+		Self::from(MeshBoolImpl::from_meshgl(mesh_gl))
+	}
+
+	pub fn from_meshgl64(mesh_gl: MeshGL64) -> Self {
 		Self::from(MeshBoolImpl::from_meshgl(mesh_gl))
 	}
 
