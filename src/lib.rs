@@ -304,6 +304,14 @@ impl MeshBool {
 		Self::from(meshbool_impl)
 	}
 
+	///The genus is a topological property of the manifold, representing the number
+	///of "handles". A sphere is 0, torus 1, etc. It is only meaningful for a single
+	///mesh, so it is best to call Decompose() first.
+	pub fn genus(&self) -> usize {
+		let chi = self.num_vert() - self.num_edge() + self.num_tri();
+		return 1 - chi / 2;
+	}
+
 	///This removes all relations (originalID, faceID, transform) to ancestor meshes
 	///and this new Manifold is marked an original. It also recreates faces
 	///- these don't get joined at boundaries where originalID changes, so the
