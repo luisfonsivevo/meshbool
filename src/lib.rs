@@ -241,6 +241,13 @@ impl MeshBool {
 		Self::from(new_impl)
 	}
 
+	///Returns the first of n sequential new unique mesh IDs for marking sets of
+	///triangles that can be looked up after further operations. Assign to
+	///MeshGL.runOriginalID vector.
+	pub fn reserve_ids(n: u32) -> u32 {
+		return MeshBoolImpl::reserve_ids(n as usize) as u32;
+	}
+
 	///Move this Manifold in space. This operation can be chained. Transforms are
 	///combined and applied lazily.
 	///
