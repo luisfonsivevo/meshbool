@@ -229,6 +229,13 @@ impl MeshBool {
 		return (1 - chi / 2) as usize;
 	}
 
+	///If this mesh is an original, this returns its meshID that can be referenced
+	///by product manifolds' MeshRelation. If this manifold is a product, this
+	///returns -1.
+	pub fn original_id(&self) -> i32 {
+		return self.meshbool_impl.mesh_relation.original_id;
+	}
+
 	///This removes all relations (originalID, faceID, transform) to ancestor meshes
 	///and this new Manifold is marked an original. It also recreates faces
 	///- these don't get joined at boundaries where originalID changes, so the
