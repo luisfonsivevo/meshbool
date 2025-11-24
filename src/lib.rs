@@ -296,6 +296,52 @@ impl MeshBool {
 		Self::from(self.meshbool_impl.transform(&m))
 	}
 
+	///Create a new copy of this manifold with updated vertex properties by
+	///supplying a function that takes the existing position and properties as
+	///input. You may specify any number of output properties, allowing creation and
+	///removal of channels. Note: undefined behavior will result if you read past
+	///the number of input properties or write past the number of output properties.
+	///
+	///If prop_func is a None, this function will just set the channel to zeroes.
+	///
+	///@param num_prop The new number of properties per vertex.
+	///@param prop_func A function that modifies the properties of a given vertex.
+	pub fn set_properties(
+		&self,
+		num_prop: i32,
+		prop_func: Option<fn(new_prop: &mut [f64], position: Point3<f64>, old_prop: &[f64])>,
+	) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		let old_num_prop = self.num_prop();
+		let old_properties = meshbool_impl.properties.clone();
+
+		if num_prop == 0 {
+			meshbool_impl.properties.clear();
+		} else {
+			meshbool_impl.properties = vec![0.0; num_prop as usize * self.num_prop_vert()];
+
+			if let Some(prop_func) = prop_func {
+				for tri in 0..self.num_tri() {
+					for i in 0..3 {
+						let edge = &meshbool_impl.halfedge[3 * tri + i];
+						let vert = edge.start_vert;
+						let prop_vert = edge.prop_vert;
+						prop_func(
+							&mut meshbool_impl.properties[(num_prop * prop_vert) as usize
+								..(num_prop * (prop_vert + 1)) as usize],
+							meshbool_impl.vert_pos[vert as usize],
+							&old_properties[(old_num_prop * prop_vert as usize) as usize
+								..(old_num_prop * (prop_vert as usize + 1)) as usize],
+						);
+					}
+				}
+			}
+		}
+
+		meshbool_impl.num_prop = num_prop;
+		return Self::from(meshbool_impl);
+	}
+
 	///	The central operation of this library: the Boolean combines two manifolds
 	///	into another by calculating their intersections and removing the unused
 	///	portions.
