@@ -1,7 +1,7 @@
 use crate::boolean3::Boolean3;
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
-use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
+use nalgebra::{Matrix3, Matrix3x4, UnitQuaternion, Vector2, Vector3};
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
 pub use crate::common::AABB;
@@ -245,7 +245,7 @@ impl MeshBool {
 	///combined and applied lazily.
 	///
 	///@param v The vector to add to every vertex.
-	pub fn translate(&self, v: Point3<f64>) -> Self {
+	pub fn translate(&self, v: Vector3<f64>) -> Self {
 		let mut transform = Matrix3x4::<f64>::identity();
 		*transform.column_mut(3) = *v;
 		Self::from(self.meshbool_impl.transform(&transform))
