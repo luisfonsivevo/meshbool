@@ -308,8 +308,8 @@ impl MeshBool {
 	///of "handles". A sphere is 0, torus 1, etc. It is only meaningful for a single
 	///mesh, so it is best to call Decompose() first.
 	pub fn genus(&self) -> usize {
-		let chi = self.num_vert() - self.num_edge() + self.num_tri();
-		return 1 - chi / 2;
+		let chi: i32 = self.num_vert() as i32 - self.num_edge() as i32 + self.num_tri() as i32;
+		return (1 - chi / 2) as usize;
 	}
 
 	///If this mesh is an original, this returns its meshID that can be referenced
