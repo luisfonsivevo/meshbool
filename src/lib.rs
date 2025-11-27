@@ -120,7 +120,7 @@ pub struct MeshGL {
 	/// Flat, GL-style interleaved list of all vertex properties: propVal =
 	/// vertProperties[vert * numProp + propIdx]. The first three properties are
 	/// always the position x, y, z. The stride of the array is numProp.
-	pub vert_properties: Vec<f32>,
+	pub vert_properties: Vec<f64>,
 	/// The vertex indices of the three triangle corners in CCW (from the outside)
 	/// order, for each triangle.
 	pub tri_verts: Vec<u32>,
@@ -149,7 +149,7 @@ pub struct MeshGL {
 	/// corresponding original mesh was transformed to create this triangle run.
 	/// This matrix is stored in column-major order and the length of the overall
 	/// vector is 12 * runOriginalID.size().
-	pub run_transform: Vec<f32>,
+	pub run_transform: Vec<f64>,
 	/// Optional: Length NumTri, contains the source face ID this triangle comes
 	/// from. Simplification will maintain all edges between triangles with
 	/// different faceIDs. Input faceIDs will be maintained to the outputs, but if
@@ -160,7 +160,7 @@ pub struct MeshGL {
 	/// used will be the maximum of this and a baseline tolerance from the size of
 	/// the bounding box. Any edge shorter than tolerance may be collapsed.
 	/// Tolerance may be enlarged when floating point error accumulates.
-	pub tolerance: f32,
+	pub tolerance: f64,
 }
 
 impl Default for MeshGL {
@@ -190,7 +190,7 @@ impl MeshGL {
 	}
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct MeshBool {
 	pub meshbool_impl: MeshBoolImpl,
 }
@@ -322,9 +322,10 @@ impl MeshBool {
 		let update_normals = !is_original && normal_idx >= 0;
 
 		let out_num_prop: u32 = 3 + num_prop as u32;
-		let tolerance = meshbool_impl
-			.tolerance
-			.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale()) as f32;
+		let tolerance = meshbool_impl.tolerance;
+		/*let tolerance = meshbool_impl
+		.tolerance
+		.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale());*/
 
 		let mut tri_verts: Vec<u32> = vec![0; 3 * num_tri];
 
@@ -340,7 +341,7 @@ impl MeshBool {
 
 		let mut run_index: Vec<u32> = Vec::new();
 		let mut run_original_id: Vec<u32> = Vec::new();
-		let mut run_transform: Vec<f32> = Vec::new();
+		let mut run_transform: Vec<f64> = Vec::new();
 
 		let mut run_normal_transform: Vec<Matrix3<f64>> = Vec::new();
 		let mut add_run = |tri, rel: Relation| {
@@ -355,7 +356,7 @@ impl MeshBool {
 			if !is_original {
 				for col in 0..4 {
 					for row in 0..3 {
-						run_transform.push(rel.transform[(row, col)] as f32)
+						run_transform.push(rel.transform[(row, col)])
 					}
 				}
 			}
@@ -394,12 +395,12 @@ impl MeshBool {
 
 		// Early return for no props
 		if num_prop == 0 {
-			let mut vert_properties: Vec<f32> = vec![0.0; 3 * num_vert];
+			let mut vert_properties: Vec<f64> = vec![0.0; 3 * num_vert];
 			for i in 0..num_vert {
 				let v = meshbool_impl.vert_pos[i];
-				vert_properties[3 * i] = v.x as f32;
-				vert_properties[3 * i + 1] = v.y as f32;
-				vert_properties[3 * i + 2] = v.z as f32;
+				vert_properties[3 * i] = v.x;
+				vert_properties[3 * i + 1] = v.y;
+				vert_properties[3 * i + 2] = v.z;
 			}
 
 			return MeshGL {
@@ -419,7 +420,7 @@ impl MeshBool {
 		// Duplicate verts with different props
 		let mut vert2idx: Vec<i32> = vec![-1; meshbool_impl.num_vert()];
 		let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); meshbool_impl.num_vert()];
-		let mut vert_properties: Vec<f32> = Vec::with_capacity(num_vert * (out_num_prop as usize));
+		let mut vert_properties: Vec<f64> = Vec::with_capacity(num_vert * (out_num_prop as usize));
 
 		let mut merge_from_vert: Vec<u32> = Vec::new();
 		let mut merge_to_vert: Vec<u32> = Vec::new();
@@ -450,11 +451,11 @@ impl MeshBool {
 					bin.push(Vector2::new(prop, idx as i32));
 
 					for p in 0..3 {
-						vert_properties.push(meshbool_impl.vert_pos[vert][p] as f32);
+						vert_properties.push(meshbool_impl.vert_pos[vert][p]);
 					}
 					for p in 0..num_prop {
 						vert_properties
-							.push(meshbool_impl.properties[(prop as usize) * num_prop + p] as f32);
+							.push(meshbool_impl.properties[(prop as usize) * num_prop + p]);
 					}
 
 					if update_normals {
@@ -467,8 +468,7 @@ impl MeshBool {
 
 						normal = (run_normal_transform[run] * normal).normalize();
 						for i in 0..3 {
-							vert_properties[start + 3 + (normal_idx as usize) + i] =
-								normal[i] as f32;
+							vert_properties[start + 3 + (normal_idx as usize) + i] = normal[i];
 						}
 					}
 
