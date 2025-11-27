@@ -126,7 +126,7 @@ impl MeshBoolImpl {
 		}
 
 		let mut prop_old2new = vec![0_i32; num_verts + 1];
-		inclusive_scan(keep.iter().cloned(), &mut prop_old2new);
+		inclusive_scan(keep.iter().cloned(), &mut prop_old2new[1..]);
 
 		let old_prop = self.properties.clone();
 		let num_verts_new = prop_old2new[num_verts];
