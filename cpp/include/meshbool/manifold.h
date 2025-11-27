@@ -659,9 +659,7 @@ class Manifold {
                     rust_aabb.max.get_z()));
   }
   inline int Genus() const {
-    // TODO
-    throw "fail";
-    // return this->internal.	;
+    return this->internal.genus();
     return 0;
   }
   inline double GetTolerance() const { return this->internal.get_tolerance(); }
@@ -693,16 +691,12 @@ class Manifold {
    */
   ///@{
   inline int OriginalID() const {
-    // TODO
-    throw "fail";
-    // return this->internal.original_id();
+    return this->internal.original_id();
     return 0;
   }
   inline Manifold AsOriginal() const { return this->internal.as_original(); }
   inline static uint32_t ReserveIDs(uint32_t n) {
-    // TODO
-    throw "fail";
-    // return this->internal.reserve_ids(n);
+    return ::rust::crate::MeshBool::reserve_ids(n);
     return n;
   }
   ///@}
