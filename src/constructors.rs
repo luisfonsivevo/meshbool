@@ -2,7 +2,7 @@ use crate::MeshBool;
 use crate::common::{Polygons, Quality, SimplePolygon};
 use crate::meshboolimpl::{MeshBoolImpl, Shape};
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
-use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector3};
+use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector2, Vector3};
 use std::mem;
 
 impl MeshBool {
@@ -74,11 +74,11 @@ impl MeshBool {
 			);
 		}
 
-		let cylinder = Self::extrude(&vec![circle], height, 0, 0.0, Point2::new(scale, scale));
+		let cylinder = Self::extrude(&vec![circle], height, 0, 0.0, Vector2::new(scale, scale));
 
 		if center {
 			cylinder
-				.translate(Point3::new(0.0, 0.0, -height / 2.0))
+				.translate(Vector3::new(0.0, 0.0, -height / 2.0))
 				.as_original()
 		} else {
 			cylinder
@@ -107,13 +107,13 @@ impl MeshBool {
 		height: f64,
 		mut n_divisions: u32,
 		twist_degrees: f64,
-		mut scale_top: Point2<f64>,
+		mut scale_top: Vector2<f64>,
 	) -> Self {
 		if cross_section.len() == 0 || height <= 0.0 {
 			return Self::invalid();
 		}
 
-		scale_top = scale_top.sup(&Point2::new(0.0, 0.0));
+		scale_top = scale_top.sup(&Vector2::new(0.0, 0.0));
 
 		let mut vert_pos = Vec::new();
 		n_divisions += 1;
@@ -140,7 +140,7 @@ impl MeshBool {
 		for i in 1..(n_divisions + 1) {
 			let alpha = (i as f64) / (n_divisions as f64);
 			let phi = alpha * twist_degrees;
-			let scale = Point2::new(1.0, 1.0).lerp(&scale_top, alpha);
+			let scale = Vector2::new(1.0, 1.0).lerp(&scale_top, alpha);
 			let rotation = Matrix2::new(
 				phi.to_radians().cos(),
 				-phi.to_radians().sin(),
