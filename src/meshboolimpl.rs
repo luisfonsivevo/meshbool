@@ -1162,7 +1162,7 @@ impl MeshBoolImpl {
 
 		let num_labels = get_labels(&mut vert_labels, &vert2vert, num_prop_vert);
 
-		let mut label2vert: Vec<i32> = Vec::with_capacity(num_labels);
+		let mut label2vert: Vec<i32> = vec![0; num_labels];
 		for v in 0..num_prop_vert {
 			label2vert[vert_labels[v] as usize] = v as i32;
 		}
