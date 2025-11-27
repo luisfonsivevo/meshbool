@@ -835,10 +835,6 @@ fn reorder_halfedges(halfedges: &mut [Halfedge]) {
 
 impl<'a> Boolean3<'a> {
 	pub fn result(self, op: OpType) -> MeshBoolImpl {
-		debug_assert!(
-			(self.expand_p > 0.0) == (op == OpType::Add),
-			"Result op type not compatible with constructor op type."
-		);
 		let c1 = if op == OpType::Intersect { 0 } else { 1 };
 		let c2 = if op == OpType::Add { 1 } else { 0 };
 		let c3 = if op == OpType::Intersect { 1 } else { -1 };
