@@ -161,6 +161,8 @@ mod crate {
 
 		fn default() -> MeshBool;
 		fn simplify(&self, ::core::option::Option<f64>) -> MeshBool;
+		fn genus(&self) -> usize;
+		fn original_id(&self) -> i32;
 		fn cube(::nalgebra::Vector3<f64>, bool) -> MeshBool;
 		fn cylinder(
 			f64,
@@ -177,10 +179,16 @@ mod crate {
 			::nalgebra::Point2<f64>,
 		) -> MeshBool;
 		fn as_original(&self) -> MeshBool;
+		fn reserve_ids(u32) -> u32;
 		fn translate(&self, ::nalgebra::Point3<f64>) -> MeshBool;
 		fn scale(&self, ::nalgebra::Vector3<f64>) -> MeshBool;
 		fn rotate(&self, f64, f64, f64) -> MeshBool;
 		//fn transform(&self, &Matrix3x4<f64>) -> MeshBool;
+		//fn set_properties(
+		//&self,
+		//i32,
+		//Option<fn(&mut [f64], Point3<f64>, &[f64])>,
+		//) -> Self;
 		fn boolean(&self, &MeshBool, OpType) -> MeshBool;
 		fn get_mesh_gl(&self, i32) -> MeshGL;
 		fn get_mesh_gl64(&self, i32) -> MeshGL64;
