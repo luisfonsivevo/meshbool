@@ -116,9 +116,20 @@ mod ::core {
 	}
 }
 
+type [f64] {
+    wellknown_traits(?Sized);
+}
+
+
+mod ::std::slice {
+	fn from_raw_parts<f64>(*const f64, usize) -> &[f64];
+}
+
 mod ::nalgebra {
 	type Matrix3x4<f64> {
 		#layout(size = 96, align = 8);
+
+		fn from_column_slice(&[f64]) -> Matrix3x4<f64>;
 	}
 
 	type Matrix3<f64> {
@@ -161,6 +172,9 @@ mod crate {
 
 		fn default() -> MeshBool;
 		fn simplify(&self, ::core::option::Option<f64>) -> MeshBool;
+		fn genus(&self) -> usize;
+		fn original_id(&self) -> i32;
+		fn tetrahedron() -> MeshBool;
 		fn cube(::nalgebra::Vector3<f64>, bool) -> MeshBool;
 		fn cylinder(
 			f64,
@@ -177,10 +191,16 @@ mod crate {
 			::nalgebra::Point2<f64>,
 		) -> MeshBool;
 		fn as_original(&self) -> MeshBool;
+		fn reserve_ids(u32) -> u32;
 		fn translate(&self, ::nalgebra::Point3<f64>) -> MeshBool;
 		fn scale(&self, ::nalgebra::Vector3<f64>) -> MeshBool;
 		fn rotate(&self, f64, f64, f64) -> MeshBool;
-		//fn transform(&self, &Matrix3x4<f64>) -> MeshBool;
+		fn transform(&self, &::nalgebra::Matrix3x4<f64>) -> MeshBool;
+		//fn set_properties(
+		//	&self,
+		//	i32,
+		//	::core::option::Option<Box<dyn Fn(&mut [f64], Point3<f64>, &[f64])>>,
+		//) -> MeshBool;
 		fn boolean(&self, &MeshBool, OpType) -> MeshBool;
 		fn get_mesh_gl(&self, i32) -> MeshGL;
 		fn get_mesh_gl64(&self, i32) -> MeshGL64;
@@ -197,6 +217,9 @@ mod crate {
 		fn get_epsilon(&self) -> f64;
 		fn get_tolerance(&self) -> f64;
 		fn set_tolerance(&self, f64) -> MeshBool;
+		fn project(&self) -> common::Polygons;
+		fn min_gap(&self, &MeshBool, f64) -> f64;
+
 		fn clone(&self) -> MeshBool;
 	}
 
