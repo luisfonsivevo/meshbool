@@ -1100,7 +1100,7 @@ impl MeshBoolImpl {
 				normals
 					.into_iter()
 					.fold(Vector3::default(), |acc, normal| acc + normal)
-					.map(|component| component >= 0.0)
+					.map(|component| component >= -K_PRECISION)
 			})
 			.collect()
 	}
