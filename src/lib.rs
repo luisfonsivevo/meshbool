@@ -1,4 +1,5 @@
 use crate::boolean3::Boolean3;
+use crate::common::Polygons;
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
@@ -591,6 +592,14 @@ impl MeshBool {
 		}
 
 		MeshBool { meshbool_impl }
+	}
+
+	///Returns polygons representing the projected outline of this object
+	///onto the X-Y plane. These polygons will often self-intersect, so it is
+	///recommended to run them through the positive fill rule of CrossSection to get
+	///a sensible result before using them.
+	pub fn project(&self) -> Polygons {
+		self.meshbool_impl.project()
 	}
 }
 
