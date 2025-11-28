@@ -24,6 +24,7 @@ mod properties;
 mod shared;
 mod sort;
 mod tree2d;
+mod tri_dis;
 mod utils;
 mod vec;
 
@@ -600,6 +601,16 @@ impl MeshBool {
 	///a sensible result before using them.
 	pub fn project(&self) -> Polygons {
 		self.meshbool_impl.project()
+	}
+
+	pub fn min_gap(&self, other: &Self, search_length: f64) -> f64 {
+		let intersect = self ^ other;
+		if !intersect.is_empty() {
+			return 0.0;
+		}
+
+		self.meshbool_impl
+			.min_gap(&other.meshbool_impl, search_length)
 	}
 }
 
