@@ -84,6 +84,39 @@ impl MeshBool {
 		}
 	}
 
+	///Constructs a geodesic sphere of a given radius.
+	///
+	///@param radius Radius of the sphere. Must be positive.
+	///@param circularSegments Number of segments along its
+	///diameter. This number will always be rounded up to the nearest factor of
+	///four, as this sphere is constructed by refining an octahedron. This means
+	///there are a circle of vertices on all three of the axis planes. Default is
+	///calculated by the static Defaults.
+	pub fn sphere(radius: f64, circular_segments: u32) -> Self {
+		if radius <= 0.0 {
+			return Self::invalid();
+		}
+		let _n: u32 = if circular_segments > 0 {
+			(circular_segments + 3) / 4
+		} else {
+			Quality::get_circular_segments(radius) / 4
+		};
+		let mut meshbool_impl = MeshBoolImpl::from_shape(Shape::Octahedron, Matrix3x4::identity());
+		// pImpl_.Subdivide([n](vec3, vec4, vec4) { return n - 1; });
+		for v in meshbool_impl.vert_pos.iter_mut() {
+			// v = f64::cos(core::f64::consts::FRAC_PI_2 * (1.0 - v));
+			// v = radius * v.normalize();
+			if v.x.is_nan() {
+				*v = Point3::new(0.0, 0.0, 0.0);
+			}
+		}
+		meshbool_impl.finish();
+		// Ignore preceding octahedron.
+		meshbool_impl.initialize_original(false);
+		todo!("Finish this function");
+		// return Self::from(meshbool_impl);
+	}
+
 	///Constructs a manifold from a set of polygons by extruding them along the
 	///Z-axis.
 	///Note that high twistDegrees with small nDivisions may cause
