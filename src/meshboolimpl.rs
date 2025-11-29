@@ -173,7 +173,7 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 }
 
 impl MeshBoolImpl {
-	pub fn from_meshgl(mesh_gl: MeshGL) -> Self {
+	pub fn from_meshgl(mesh_gl: &MeshGL) -> Self {
 		let num_vert = mesh_gl.num_vert();
 		let num_tri = mesh_gl.num_tri();
 
@@ -286,7 +286,7 @@ impl MeshBoolImpl {
 
 		let mut tri_ref: Vec<TriRef> = unsafe { vec_uninit(mesh_gl.num_tri()) };
 
-		let mut run_index = mesh_gl.run_index;
+		let mut run_index = mesh_gl.run_index.clone();
 		let run_end = mesh_gl.tri_verts.len();
 		if run_index.is_empty() {
 			run_index = vec![0, run_end as u32];
@@ -297,7 +297,7 @@ impl MeshBoolImpl {
 		}
 
 		let start_id = MeshBoolImpl::reserve_ids(1.max(mesh_gl.run_original_id.len()));
-		let mut run_original_id = mesh_gl.run_original_id;
+		let mut run_original_id = mesh_gl.run_original_id.clone();
 		if run_original_id.is_empty() {
 			run_original_id.push(start_id as u32);
 		}
@@ -1214,7 +1214,7 @@ impl MeshBoolImpl {
 
 		let num_labels = get_labels(&mut vert_labels, &vert2vert, num_prop_vert);
 
-		let mut label2vert: Vec<i32> = Vec::with_capacity(num_labels);
+		let mut label2vert: Vec<i32> = vec![0; num_labels];
 		for v in 0..num_prop_vert {
 			label2vert[vert_labels[v] as usize] = v as i32;
 		}
