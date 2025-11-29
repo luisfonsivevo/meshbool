@@ -347,9 +347,6 @@ impl MeshBoolImpl {
 				// Single topological unit needs 2 faces added to be split
 				let new_vert = self.vert_pos.len() as i32;
 				self.vert_pos.push(self.vert_pos[end_vert as usize]);
-				if self.vert_normal.len() > 0 {
-					self.vert_normal.push(self.vert_normal[end_vert as usize]);
-				}
 
 				current = self.halfedge[next_halfedge(current) as usize].paired_halfedge;
 				let opposite = self.halfedge[next_halfedge(edge) as usize].paired_halfedge;
@@ -440,9 +437,6 @@ impl MeshBoolImpl {
 			// Separate topological unit needs no new faces to be split
 			let new_vert = self.vert_pos.len() as i32;
 			self.vert_pos.push(self.vert_pos[end_vert as usize]);
-			if self.vert_normal.len() > 0 {
-				self.vert_normal.push(self.vert_normal[end_vert as usize]);
-			}
 
 			self.for_vert_mut(next_halfedge(current), |myself, e| {
 				let e = e as usize;
@@ -468,9 +462,6 @@ impl MeshBoolImpl {
 			// Split the pinched vert the previous split created.
 			let new_vert = self.vert_pos.len() as i32;
 			self.vert_pos.push(self.vert_pos[end_vert as usize]);
-			if self.vert_normal.len() > 0 {
-				self.vert_normal.push(self.vert_normal[end_vert as usize]);
-			}
 
 			self.for_vert_mut(next_halfedge(current), |myself, e| {
 				let e = e as usize;

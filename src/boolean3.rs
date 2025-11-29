@@ -15,6 +15,7 @@ use std::ops::DerefMut;
 // are carefully designed to minimize rounding error and to eliminate it at edge
 // cases to ensure consistency.
 
+//given a line segment and x coordinate, find y and z coordinates
 fn interpolate(p_l: Point3<f64>, p_r: Point3<f64>, x: f64) -> Vector2<f64> {
 	let dx_l = x - p_l.x;
 	let dx_r = x - p_r.x;
@@ -61,12 +62,12 @@ fn intersect(
 		});
 	xyzz.z = lambda * (p_r.z - p_l.z) + (if use_l { p_l.z } else { p_r.z });
 	xyzz.w = lambda * (q_r.z - q_l.z) + (if use_l { q_l.z } else { q_r.z });
-	return xyzz;
+	xyzz
 }
 
 #[inline]
-fn shadows(p: f64, q: f64, dir: f64) -> bool {
-	if p == q { dir < 0.0 } else { p < q }
+fn shadows(p: f64, q: f64, sym_pert: bool) -> bool {
+	if p == q { sym_pert } else { p < q }
 }
 
 #[inline]
@@ -76,57 +77,59 @@ fn shadow01(
 	vert_pos_p: &[Point3<f64>],
 	vert_pos_q: &[Point3<f64>],
 	halfedge_q: &[Halfedge],
-	expand_p: f64,
-	normal: &[Vector3<f64>],
+	sym_pert_map: &[Vector3<bool>],
 	reverse: bool,
 ) -> (i32, Vector2<f64>) {
-	let q1s: usize = halfedge_q[q1].start_vert as usize;
-	let q1e = halfedge_q[q1].end_vert as usize;
-	let p0x = vert_pos_p[p0].x;
-	let q1sx = vert_pos_q[q1s].x;
-	let q1ex = vert_pos_q[q1e].x;
+	let p0_pos = vert_pos_p[p0];
+	let q1s_vert_idx = halfedge_q[q1].start_vert as usize;
+	let q1e_vert_idx = halfedge_q[q1].end_vert as usize;
+	let q1s_pos = vert_pos_q[q1s_vert_idx];
+	let q1e_pos = vert_pos_q[q1e_vert_idx];
+
+	//1D vertex-edge intersection test
 	let mut s01 = if reverse {
-		shadows(q1sx, p0x, expand_p * normal[q1s].x) as i32
-			- shadows(q1ex, p0x, expand_p * normal[q1e].x) as i32
+		shadows(q1s_pos.x, p0_pos.x, sym_pert_map[q1s_vert_idx].x) as i32
+			- shadows(q1e_pos.x, p0_pos.x, sym_pert_map[q1e_vert_idx].x) as i32
 	} else {
-		shadows(p0x, q1ex, expand_p * normal[p0].x) as i32
-			- shadows(p0x, q1sx, expand_p * normal[p0].x) as i32
+		shadows(p0_pos.x, q1e_pos.x, sym_pert_map[p0].x) as i32
+			- shadows(p0_pos.x, q1s_pos.x, sym_pert_map[p0].x) as i32
 	};
 
-	let mut yz01 = Vector2::from_element(f64::NAN);
+	let mut yz01_pos = Vector2::from_element(f64::NAN);
 
 	if s01 != 0 {
-		yz01 = interpolate(vert_pos_q[q1s], vert_pos_q[q1e], vert_pos_p[p0].x);
+		yz01_pos = interpolate(q1s_pos, q1e_pos, p0_pos.x);
 		if reverse {
-			let mut diff = vert_pos_q[q1s] - vert_pos_p[p0];
+			let mut diff = q1s_pos - p0_pos;
 			let start2 = diff.magnitude_squared();
-			diff = vert_pos_q[q1e] - vert_pos_p[p0];
+			diff = q1e_pos - p0_pos;
 			let end2 = diff.magnitude_squared();
-			let dir = if start2 < end2 {
-				normal[q1s].y
+			let yz01_sym_pert = if start2 < end2 {
+				sym_pert_map[q1s_vert_idx].y
 			} else {
-				normal[q1e].y
+				sym_pert_map[q1e_vert_idx].y
 			};
-			if !shadows(yz01[0], vert_pos_p[p0].y, expand_p * dir) {
+
+			if !shadows(yz01_pos[0], p0_pos.y, yz01_sym_pert) {
 				s01 = 0;
 			}
 		} else {
-			if !shadows(vert_pos_p[p0].y, yz01[0], expand_p * normal[p0].y) {
+			if !shadows(p0_pos.y, yz01_pos[0], sym_pert_map[p0].y) {
 				s01 = 0;
 			}
 		}
 	}
 
-	(s01, yz01)
+	(s01, yz01_pos)
 }
 
+//2D edge-edge intersection test
 struct Kernel11<'a> {
 	vert_pos_p: &'a [Point3<f64>],
 	vert_pos_q: &'a [Point3<f64>],
 	halfedge_p: &'a [Halfedge],
 	halfedge_q: &'a [Halfedge],
-	expand_p: f64,
-	normal_p: &'a [Vector3<f64>],
+	sym_pert_map: &'a [Vector3<bool>],
 }
 
 impl<'a> Kernel11<'a> {
@@ -154,8 +157,7 @@ impl<'a> Kernel11<'a> {
 				self.vert_pos_p,
 				self.vert_pos_q,
 				self.halfedge_q,
-				self.expand_p,
-				self.normal_p,
+				self.sym_pert_map,
 				false,
 			);
 			// If the value is NaN, then these do not overlap.
@@ -182,8 +184,7 @@ impl<'a> Kernel11<'a> {
 				self.vert_pos_q,
 				self.vert_pos_p,
 				self.halfedge_p,
-				self.expand_p,
-				self.normal_p,
+				self.sym_pert_map,
 				true,
 			);
 			// If the value is NaN, then these do not overlap.
@@ -212,13 +213,13 @@ impl<'a> Kernel11<'a> {
 			let start2 = diff.coords.magnitude_squared();
 			diff = self.vert_pos_p[p1e] - xyzz11.xyz();
 			let end2 = diff.coords.magnitude_squared();
-			let dir = if start2 < end2 {
-				self.normal_p[p1s].z
+			let xyzz11_sym_pert = if start2 < end2 {
+				self.sym_pert_map[p1s].z
 			} else {
-				self.normal_p[p1e].z
+				self.sym_pert_map[p1e].z
 			};
 
-			if !shadows(xyzz11.z, xyzz11.w, self.expand_p * dir) {
+			if !shadows(xyzz11.z, xyzz11.w, xyzz11_sym_pert) {
 				s11 = 0;
 			}
 		}
@@ -227,12 +228,12 @@ impl<'a> Kernel11<'a> {
 	}
 }
 
+//2D vertex-triangle intersection test
 struct Kernel02<'a> {
 	vert_pos_p: &'a [Point3<f64>],
 	halfedge_q: &'a [Halfedge],
 	vert_pos_q: &'a [Point3<f64>],
-	expand_p: f64,
-	vert_normal_p: &'a [Vector3<f64>],
+	sym_pert_map: &'a [Vector3<bool>],
 	forward: bool,
 }
 
@@ -247,7 +248,7 @@ impl<'a> Kernel02<'a> {
 		// Either the left or right must shadow, but not both. This ensures the
 		// intersection is between the left and right.
 		let mut shadows_var = false;
-		let mut closest_vert = -1;
+		let mut closest_vert_q = -1;
 		let mut min_metric = f64::INFINITY;
 
 		let pos_p = self.vert_pos_p[p0];
@@ -266,7 +267,7 @@ impl<'a> Kernel02<'a> {
 				let metric = diff.magnitude_squared();
 				if metric < min_metric {
 					min_metric = metric;
-					closest_vert = q_vert;
+					closest_vert_q = q_vert;
 				}
 			}
 
@@ -276,8 +277,7 @@ impl<'a> Kernel02<'a> {
 				self.vert_pos_p,
 				self.vert_pos_q,
 				self.halfedge_q,
-				self.expand_p,
-				self.vert_normal_p,
+				self.sym_pert_map,
 				!self.forward,
 			);
 			let s01 = syz01.0;
@@ -304,19 +304,14 @@ impl<'a> Kernel02<'a> {
 			z02 = f64::NAN;
 		} else {
 			debug_assert!(k == 2, "Boolean manifold error: s02");
-			let vert_pos = self.vert_pos_p[p0];
-			z02 = interpolate(yzz_rl[0], yzz_rl[1], vert_pos.y)[1];
+			z02 = interpolate(yzz_rl[0], yzz_rl[1], pos_p.y)[1];
 			if self.forward {
-				if !shadows(vert_pos.z, z02, self.expand_p * self.vert_normal_p[p0].z) {
+				if !shadows(pos_p.z, z02, self.sym_pert_map[p0].z) {
 					s02 = 0;
 				}
 			} else {
 				// DEBUG_ASSERT(closestVert != -1, topologyErr, "No closest vert");
-				if !shadows(
-					z02,
-					vert_pos.z,
-					self.expand_p * self.vert_normal_p[closest_vert as usize].z,
-				) {
+				if !shadows(z02, pos_p.z, self.sym_pert_map[closest_vert_q as usize].z) {
 					s02 = 0;
 				}
 			}
@@ -326,6 +321,7 @@ impl<'a> Kernel02<'a> {
 	}
 }
 
+//3D edge-triangle intersection test
 struct Kernel12<'a> {
 	halfedges_p: &'a [Halfedge],
 	halfedges_q: &'a [Halfedge],
@@ -450,7 +446,7 @@ impl<'a> Recorder for Kernel12Recorder<'a> {
 fn intersect12(
 	in_p: &MeshBoolImpl,
 	in_q: &MeshBoolImpl,
-	expand_p: f64,
+	sym_pert_map: &[Vector3<bool>],
 	forward: bool,
 ) -> (Vec<[i32; 2]>, Vec<i32>, Vec<Point3<f64>>) {
 	// a: 1 (edge), b: 2 (face)
@@ -461,8 +457,7 @@ fn intersect12(
 		vert_pos_p: &a.vert_pos,
 		halfedge_q: &b.halfedge,
 		vert_pos_q: &b.vert_pos,
-		expand_p,
-		vert_normal_p: &in_p.vert_normal,
+		sym_pert_map,
 		forward,
 	};
 	let k11 = Kernel11 {
@@ -470,8 +465,7 @@ fn intersect12(
 		vert_pos_q: &in_q.vert_pos,
 		halfedge_p: &in_p.halfedge,
 		halfedge_q: &in_q.halfedge,
-		expand_p,
-		normal_p: &in_p.vert_normal,
+		sym_pert_map,
 	};
 
 	let k12 = Kernel12 {
@@ -517,6 +511,7 @@ fn intersect12(
 	(p1q2, x12, v12)
 }
 
+//3D vertex-solid intersection test
 struct Winding03Recorder<'a, 'b> {
 	w03: &'a mut [i32],
 	k02: &'a Kernel02<'b>,
@@ -540,7 +535,7 @@ fn winding03(
 	in_p: &MeshBoolImpl,
 	in_q: &MeshBoolImpl,
 	p1q2: &[[i32; 2]],
-	expand_p: f64,
+	sym_pert_map: &[Vector3<bool>],
 	forward: bool,
 ) -> Vec<i32> {
 	let a = if forward { in_p } else { in_q };
@@ -574,8 +569,7 @@ fn winding03(
 		vert_pos_p: &a.vert_pos,
 		halfedge_q: &b.halfedge,
 		vert_pos_q: &b.vert_pos,
-		expand_p,
-		vert_normal_p: &in_p.vert_normal,
+		sym_pert_map,
 		forward,
 	};
 
@@ -600,28 +594,35 @@ fn winding03(
 	w03
 }
 
+#[derive(Debug)]
 pub struct Boolean3<'a> {
 	pub in_p: &'a MeshBoolImpl,
 	pub in_q: &'a MeshBoolImpl,
-	pub expand_p: f64,
+	///Pairs of indices [edge_from_P, face_from_Q] that intersect
 	pub p1q2: Vec<[i32; 2]>,
+	///Pairs of indices [face_from_P, edge_from_Q] that intersect
 	pub p2q1: Vec<[i32; 2]>,
+	///Intersection status values for each P-edge crossing Q-face (corresponds to X12(eA, fB) in the dissertation).
+	///Values are -1, 0, or +1 indicating crossing direction
 	pub x12: Vec<i32>,
+	///Intersection status values for each Q-edge crossing P-face (corresponds to X21(fA, eB) in the dissertation)
+	///Values are -1, 0, or +1 indicating crossing direction
 	pub x21: Vec<i32>,
+	///Winding number for each vertex in P relative to solid Q (corresponds to X03(vA, B) in the dissertation).
+	///Indicates if vertices of P are inside (1) or outside (0) of Q
 	pub w03: Vec<i32>,
+	///Winding number for each vertex in Q relative to solid P (corresponds to X30(A, vB) in the dissertation).
+	///Indicates if vertices of Q are inside (1) or outside (0) of P
 	pub w30: Vec<i32>,
+	///The 3D intersection points where P-edges pierce Q-faces
 	pub v12: Vec<Point3<f64>>,
+	///The 3D intersection points where Q-faces are pierced by P-edges
 	pub v21: Vec<Point3<f64>>,
 	pub valid: bool,
 }
 
 impl<'a> Boolean3<'a> {
 	pub fn new(in_p: &'a MeshBoolImpl, in_q: &'a MeshBoolImpl, op: OpType) -> Self {
-		let expand_p = if op == OpType::Add { 1.0 } else { -1.0 };
-
-		// Symbolic perturbation:
-		// Union -> expand inP
-		// Difference, Intersection -> contract inP
 		const INT_MAX_SZ: usize = i32::MAX as usize;
 
 		if in_p.is_empty() || in_q.is_empty() || !in_p.bbox.does_overlap(&in_q.bbox) {
@@ -629,7 +630,6 @@ impl<'a> Boolean3<'a> {
 			return Boolean3 {
 				in_p,
 				in_q,
-				expand_p,
 				p1q2: Vec::default(),
 				p2q1: Vec::default(),
 				x12: Vec::default(),
@@ -642,18 +642,19 @@ impl<'a> Boolean3<'a> {
 			};
 		}
 
+		let sym_pert_map = in_p.get_perturbation_map(in_q, op);
+
 		// Level 3
 		// Build up the intersection of the edges and triangles, keeping only those
 		// that intersect, and record the direction the edge is passing through the
 		// triangle.
-		let (p1q2, x12, v12) = intersect12(in_p, in_q, expand_p, true);
-		let (p2q1, x21, v21) = intersect12(in_p, in_q, expand_p, false);
+		let (p1q2, x12, v12) = intersect12(in_p, in_q, &sym_pert_map, true);
+		let (p2q1, x21, v21) = intersect12(in_p, in_q, &sym_pert_map, false);
 
 		if x12.len() > INT_MAX_SZ || x21.len() > INT_MAX_SZ {
 			return Boolean3 {
 				in_p,
 				in_q,
-				expand_p,
 				p1q2: Vec::default(),
 				p2q1: Vec::default(),
 				x12: Vec::default(),
@@ -668,13 +669,12 @@ impl<'a> Boolean3<'a> {
 
 		// Compute winding numbers of all vertices using flood fill
 		// Vertices on the same connected component have the same winding number
-		let w03 = winding03(in_p, in_q, &p1q2, expand_p, true);
-		let w30 = winding03(in_p, in_q, &p2q1, expand_p, false);
+		let w03 = winding03(in_p, in_q, &p1q2, &sym_pert_map, true);
+		let w30 = winding03(in_p, in_q, &p2q1, &sym_pert_map, false);
 
 		Boolean3 {
 			in_p,
 			in_q,
-			expand_p,
 			p1q2,
 			p2q1,
 			x12,
