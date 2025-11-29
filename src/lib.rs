@@ -105,7 +105,7 @@ fn test() {
 ///from the same run and share the same faceID. These faces will be planar
 ///within the output tolerance.
 ///
-///The halfedgeTangent vector is used to specify the weighted tangent vectors of
+///The halfedge_tangent vector is used to specify the weighted tangent vectors of
 ///each halfedge for the purpose of using the Refine methods to create a
 ///smoothly-interpolated surface. They can also be output when calculated
 ///automatically by the Smooth functions.
@@ -155,6 +155,11 @@ pub struct MeshGL {
 	/// none are given, they will be filled in with Manifold's coplanar face
 	/// calculation based on mesh tolerance.
 	pub face_id: Vec<u32>,
+	/// Optional: The X-Y-Z-W weighted tangent vectors for smooth Refine(). If
+	/// non-empty, must be exactly four times as long as Mesh.triVerts. Indexed
+	/// as 4 * (3 * tri + i) + j, i < 3, j < 4, representing the tangent value
+	/// Mesh.triVerts[tri][i] along the CCW edge. If empty, mesh is faceted.
+	pub halfedge_tangent: Vec<f32>,
 	/// Tolerance for mesh simplification. When creating a Manifold, the tolerance
 	/// used will be the maximum of this and a baseline tolerance from the size of
 	/// the bounding box. Any edge shorter than tolerance may be collapsed.
@@ -175,6 +180,7 @@ impl Default for MeshGL {
 			run_original_id: Vec::default(),
 			run_transform: Vec::default(),
 			face_id: Vec::default(),
+			halfedge_tangent: Vec::default(),
 		}
 	}
 }
@@ -327,6 +333,12 @@ impl MeshBool {
 
 		let mut tri_verts: Vec<u32> = vec![0; 3 * num_tri];
 
+		let out_halfedge_tangent = meshbool_impl
+			.halfedge_tangent
+			.iter()
+			.flat_map(|t| [t.x as f32, t.y as f32, t.z as f32, t.w as f32])
+			.collect::<Vec<f32>>();
+
 		// Sort the triangles into runs
 		let mut face_id: Vec<u32> = vec![0; num_tri];
 		let mut tri_new2old: Vec<_> = (0..num_tri).map(|i| i as i32).collect();
@@ -403,6 +415,7 @@ impl MeshBool {
 
 			return MeshGL {
 				num_prop: out_num_prop,
+				halfedge_tangent: out_halfedge_tangent,
 				vert_properties,
 				tri_verts,
 				merge_from_vert: Vec::default(),
@@ -483,6 +496,7 @@ impl MeshBool {
 
 		MeshGL {
 			num_prop: out_num_prop,
+			halfedge_tangent: out_halfedge_tangent,
 			vert_properties,
 			tri_verts,
 			merge_from_vert,
