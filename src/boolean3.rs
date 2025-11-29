@@ -500,7 +500,7 @@ fn intersect12(
 	};
 
 	b.collider
-		.collisions::<_, _, Kernel12Recorder>(f, a.halfedge.len(), &mut recorder);
+		.collisions_from_fn::<_, _, Kernel12Recorder>(f, a.halfedge.len(), &mut recorder);
 
 	let result = recorder.local_store;
 	let mut p1q2 = result.p1q2;
@@ -587,7 +587,7 @@ fn winding03(
 	};
 	let f = |i| a.vert_pos[verts[i as usize] as usize];
 	b.collider
-		.collisions::<_, _, Winding03Recorder>(f, verts.len(), &mut recorder);
+		.collisions_from_fn::<_, _, Winding03Recorder>(f, verts.len(), &mut recorder);
 	// flood fill
 	for i in 0..w03.len() {
 		let root = u_a.find(i as u32) as usize;

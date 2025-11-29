@@ -5,6 +5,15 @@ use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector2, Vector3};
 
 impl MeshBool {
+	///Constructs a tetrahedron centered at the origin with one vertex at (1,1,1)
+	///and the rest at similarly symmetric points.
+	pub fn tetrahedron() -> Self {
+		return Self::from(MeshBoolImpl::from_shape(
+			Shape::Tetrahedron,
+			Matrix3x4::identity(),
+		));
+	}
+
 	///Constructs a unit cube (edge lengths all one), by default in the first
 	///octant, touching the origin. If any dimensions in size are negative, or if
 	///all are zero, an empty Manifold will be returned.
