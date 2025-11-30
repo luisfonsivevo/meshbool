@@ -1,4 +1,5 @@
 use crate::boolean3::Boolean3;
+use crate::common::Polygons;
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, UnitQuaternion, Vector2, Vector3};
@@ -24,6 +25,7 @@ mod properties;
 pub mod shared;
 mod sort;
 mod tree2d;
+mod tri_dis;
 mod utils;
 mod vec;
 
@@ -222,6 +224,21 @@ impl MeshBool {
 		Self::from(meshbool_impl)
 	}
 
+	///The genus is a topological property of the manifold, representing the number
+	///of "handles". A sphere is 0, torus 1, etc. It is only meaningful for a single
+	///mesh, so it is best to call Decompose() first.
+	pub fn genus(&self) -> usize {
+		let chi: i32 = self.num_vert() as i32 - self.num_edge() as i32 + self.num_tri() as i32;
+		return (1 - chi / 2) as usize;
+	}
+
+	///If this mesh is an original, this returns its meshID that can be referenced
+	///by product manifolds' MeshRelation. If this manifold is a product, this
+	///returns -1.
+	pub fn original_id(&self) -> i32 {
+		return self.meshbool_impl.mesh_relation.original_id;
+	}
+
 	///This removes all relations (originalID, faceID, transform) to ancestor meshes
 	///and this new Manifold is marked an original. It also recreates faces
 	///- these don't get joined at boundaries where originalID changes, so the
@@ -240,6 +257,13 @@ impl MeshBool {
 		new_impl.mark_coplanar();
 		new_impl.initialize_original(true);
 		Self::from(new_impl)
+	}
+
+	///Returns the first of n sequential new unique mesh IDs for marking sets of
+	///triangles that can be looked up after further operations. Assign to
+	///MeshGL.runOriginalID vector.
+	pub fn reserve_ids(n: u32) -> u32 {
+		return MeshBoolImpl::reserve_ids(n as usize) as u32;
 	}
 
 	///Move this Manifold in space. This operation can be chained. Transforms are
@@ -295,6 +319,52 @@ impl MeshBool {
 	///@param m The affine transform matrix to apply to all the vertices.
 	pub fn transform(&self, m: &Matrix3x4<f64>) -> Self {
 		Self::from(self.meshbool_impl.transform(&m))
+	}
+
+	///Create a new copy of this manifold with updated vertex properties by
+	///supplying a function that takes the existing position and properties as
+	///input. You may specify any number of output properties, allowing creation and
+	///removal of channels. Note: undefined behavior will result if you read past
+	///the number of input properties or write past the number of output properties.
+	///
+	///If prop_func is a None, this function will just set the channel to zeroes.
+	///
+	///@param num_prop The new number of properties per vertex.
+	///@param prop_func A function that modifies the properties of a given vertex.
+	pub fn set_properties(
+		&self,
+		num_prop: i32,
+		prop_func: Option<fn(new_prop: &mut [f64], position: Point3<f64>, old_prop: &[f64])>,
+	) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		let old_num_prop = self.num_prop();
+		let old_properties = meshbool_impl.properties.clone();
+
+		if num_prop == 0 {
+			meshbool_impl.properties.clear();
+		} else {
+			meshbool_impl.properties = vec![0.0; num_prop as usize * self.num_prop_vert()];
+
+			if let Some(prop_func) = prop_func {
+				for tri in 0..self.num_tri() {
+					for i in 0..3 {
+						let edge = &meshbool_impl.halfedge[3 * tri + i];
+						let vert = edge.start_vert;
+						let prop_vert = edge.prop_vert;
+						prop_func(
+							&mut meshbool_impl.properties[(num_prop * prop_vert) as usize
+								..(num_prop * (prop_vert + 1)) as usize],
+							meshbool_impl.vert_pos[vert as usize],
+							&old_properties[(old_num_prop * prop_vert as usize) as usize
+								..(old_num_prop * (prop_vert as usize + 1)) as usize],
+						);
+					}
+				}
+			}
+		}
+
+		meshbool_impl.num_prop = num_prop;
+		return Self::from(meshbool_impl);
 	}
 
 	///	The central operation of this library: the Boolean combines two manifolds
@@ -592,6 +662,24 @@ impl MeshBool {
 		}
 
 		MeshBool { meshbool_impl }
+	}
+
+	///Returns polygons representing the projected outline of this object
+	///onto the X-Y plane. These polygons will often self-intersect, so it is
+	///recommended to run them through the positive fill rule of CrossSection to get
+	///a sensible result before using them.
+	pub fn project(&self) -> Polygons {
+		self.meshbool_impl.project()
+	}
+
+	pub fn min_gap(&self, other: &Self, search_length: f64) -> f64 {
+		let intersect = self ^ other;
+		if !intersect.is_empty() {
+			return 0.0;
+		}
+
+		self.meshbool_impl
+			.min_gap(&other.meshbool_impl, search_length)
 	}
 }
 

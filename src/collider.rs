@@ -340,7 +340,33 @@ impl Collider {
 	///If parallel is false, the function will run in sequential mode.
 	///
 	///If thread local storage is not needed, use SimpleRecorder.
-	pub fn collisions<F, AABBOverlapT, RecorderT>(
+	pub fn collisions_from_slice<AABBOverlapT, RecorderT>(
+		&self,
+		queries_in: &[AABBOverlapT],
+		recorder: &mut impl Recorder,
+		_parallel: bool,
+	) where
+		AABBOverlapT: Debug + Clone,
+		RecorderT: Recorder,
+		AABB: AABBOverlap<AABBOverlapT>,
+	{
+		if self.internal_children.is_empty() {
+			return;
+		}
+		let f = |i: i32| -> AABBOverlapT { queries_in[i as usize].clone() };
+		// TODO: if parallel
+		for query_idx in 0..queries_in.len() {
+			FindCollision {
+				f: &f,
+				node_bbox: &self.node_bbox,
+				internal_children: &self.internal_children,
+				recorder,
+			}
+			.call(query_idx as i32);
+		}
+	}
+
+	pub fn collisions_from_fn<F, AABBOverlapT, RecorderT>(
 		&self,
 		f: F,
 		n: usize,

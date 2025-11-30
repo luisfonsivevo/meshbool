@@ -513,7 +513,7 @@ impl MeshBoolImpl {
 		}
 	}
 
-	fn reserve_ids(n: usize) -> usize {
+	pub fn reserve_ids(n: usize) -> usize {
 		MESH_ID_COUNTER.fetch_add(n, AtomicOrdering::Relaxed)
 	}
 

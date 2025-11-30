@@ -1,4 +1,6 @@
+use crate::common::{Polygons, SimplePolygon};
 use crate::meshboolimpl::MeshBoolImpl;
+use crate::parallel::copy_if;
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use crate::shared::{Halfedge, TriRef, get_axis_aligned_projection};
 use crate::utils::ccw;
@@ -218,5 +220,38 @@ impl MeshBoolImpl {
 				add_tri(face, tri, normal, halfedge_ref[first_edge]);
 			}
 		}
+	}
+
+	pub fn project(&self) -> Polygons {
+		let projection = get_axis_aligned_projection(Vector3::new(0.0, 0.0, 1.0));
+		let mut cusps: Vec<Halfedge> = vec![Default::default(); self.num_edge()];
+		let new_size = copy_if(
+			self.halfedge.iter().copied(),
+			cusps.as_mut_slice(),
+			|edge: Halfedge| {
+				self.face_normal
+					[self.halfedge[edge.paired_halfedge as usize].paired_halfedge as usize / 3]
+					.z >= 0.0 && self.face_normal[edge.paired_halfedge as usize / 3].z < 0.0
+			},
+		);
+		cusps.resize(new_size, Default::default());
+
+		let polys_indexed = project_polygons(
+			&assemble_halfedges(&cusps, 0),
+			&cusps,
+			&self.vert_pos,
+			projection,
+		);
+
+		let mut polys: Polygons = vec![];
+		for poly in polys_indexed.iter() {
+			let mut simple: SimplePolygon = vec![];
+			for poly_vert in poly.iter() {
+				simple.push(poly_vert.pos);
+			}
+			polys.push(simple);
+		}
+
+		return polys;
 	}
 }
