@@ -2,7 +2,7 @@ use crate::boolean3::Boolean3;
 use crate::common::Polygons;
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
-use nalgebra::{Matrix3, Matrix3x4, UnitQuaternion, Vector2, Vector3};
+use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
 use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
 pub use crate::common::AABB;
