@@ -63,7 +63,7 @@ impl MeshBoolImpl {
 			self.num_tri()
 		);
 
-		self.calculate_normals();
+		self.calculate_face_normals();
 		self.collider = Collider::new(&face_box, &face_morton);
 	}
 
@@ -87,10 +87,6 @@ impl MeshBoolImpl {
 
 		vec_resize(&mut vert_new2old, new_num_vert);
 		permute(&mut self.vert_pos, &vert_new2old);
-
-		if self.vert_normal.len() == num_vert {
-			permute(&mut self.vert_normal, &vert_new2old);
-		}
 	}
 
 	///Updates the halfedges to point to new vert indices based on a mapping,

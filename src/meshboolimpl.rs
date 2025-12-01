@@ -1,12 +1,12 @@
 use crate::collider::Collider;
-use crate::common::{AABB, sun_acos};
+use crate::common::AABB;
 use crate::disjoint_sets::DisjointSets;
 use crate::mesh_fixes::{FlipTris, transform_normal};
 use crate::parallel::exclusive_scan_in_place;
 use crate::shared::{Halfedge, TriRef, max_epsilon, next_halfedge, normal_transform};
-use crate::utils::{atomic_add_i32, mat3, mat4, next3_i32, next3_usize};
+use crate::utils::{K_PRECISION, atomic_add_i32, mat3, mat4, next3_i32, next3_usize};
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
-use crate::{ManifoldError, MeshGL};
+use crate::{ManifoldError, MeshGL, OpType};
 use nalgebra::{Matrix3x4, Point3, Vector3, Vector4};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeMap, HashMap};
@@ -57,7 +57,6 @@ pub struct MeshBoolImpl {
 	pub properties: Vec<f64>,
 	// Note that vertNormal_ is not precise due to the use of an approximated acos
 	// function
-	pub vert_normal: Vec<Vector3<f64>>,
 	pub face_normal: Vec<Vector3<f64>>,
 	pub mesh_relation: MeshRelationD,
 	pub collider: Collider,
@@ -394,7 +393,7 @@ impl MeshBoolImpl {
 		// we need to split pinched verts before calculating vertex normals, because
 		// the algorithm doesn't work with pinched verts
 		manifold.cleanup_topology();
-		manifold.calculate_normals();
+		manifold.calculate_face_normals();
 
 		manifold.dedupe_prop_verts();
 		manifold.mark_coplanar();
@@ -850,7 +849,6 @@ impl MeshBoolImpl {
 		self.bbox = AABB::default();
 		self.vert_pos = Vec::default();
 		self.halfedge = Vec::default();
-		self.vert_normal = Vec::default();
 		self.face_normal = Vec::default();
 		self.mesh_relation = MeshRelationD::default();
 		self.status = status;
@@ -891,7 +889,6 @@ impl MeshBoolImpl {
 
 		vec_resize(&mut result.vert_pos, self.num_vert());
 		vec_resize(&mut result.face_normal, self.face_normal.len());
-		vec_resize(&mut result.vert_normal, self.vert_normal.len());
 		for i in 0..self.vert_pos.len() {
 			let v = &self.vert_pos[i];
 			result.vert_pos[i] = (transform * Vector4::new(v.x, v.y, v.z, 1.0)).into();
@@ -900,9 +897,6 @@ impl MeshBoolImpl {
 		let normal_transform = normal_transform(transform);
 		for i in 0..self.face_normal.len() {
 			result.face_normal[i] = transform_normal(normal_transform, self.face_normal[i]);
-		}
-		for i in 0..self.vert_normal.len() {
-			result.vert_normal[i] = transform_normal(normal_transform, self.vert_normal[i]);
 		}
 
 		let invert = mat3(transform).determinant() < 0.0;
@@ -947,110 +941,168 @@ impl MeshBoolImpl {
 	///If the face normals have been invalidated by an operation like Warp(),
 	///ensure you do faceNormal_.resize(0) before calling this function to force
 	///recalculation.
-	pub fn calculate_normals(&mut self) {
-		let num_vert = self.num_vert();
-		vec_resize(&mut self.vert_normal, num_vert);
-
-		let vert_halfedge_map: Vec<AtomicI32> = (0..self.num_vert())
-			.map(|_| AtomicI32::new(i32::MAX))
-			.collect();
-
-		let atomic_min = |value, vert: i32| {
-			if vert < 0 {
-				return;
-			}
-			let mut old = i32::MAX;
-			while let Err(actual) = vert_halfedge_map[vert as usize].compare_exchange(
-				old,
-				value,
-				AtomicOrdering::SeqCst,
-				AtomicOrdering::SeqCst,
-			) {
-				old = actual;
-				if old < value {
-					break;
-				}
-			}
-		};
-
-		if self.face_normal.len() != self.num_tri() {
-			let num_tri = self.num_tri();
-			vec_resize(&mut self.face_normal, num_tri);
-			for face in 0..num_tri {
-				let face = face as i32;
-				let tri_normal = &mut self.face_normal[face as usize];
-				if self.halfedge[(3 * face) as usize].start_vert < 0 {
-					*tri_normal = Vector3::new(0.0, 0.0, 1.0);
-					continue;
-				}
-
-				let mut tri_verts = Vector3::<i32>::default();
-				for i in 0..3 {
-					let v = self.halfedge[(3 * face + i) as usize].start_vert;
-					tri_verts[i as usize] = v;
-					atomic_min(3 * face + i, v);
-				}
-
-				let mut edge = [Vector3::<f64>::default(); 3];
-				for i in 0..3 {
-					let j = next3_usize(i);
-					edge[i] = (self.vert_pos[tri_verts[j] as usize]
-						- self.vert_pos[tri_verts[i] as usize])
-						.normalize();
-				}
-
-				*tri_normal = edge[0].cross(&edge[1]).normalize();
-				if tri_normal.x.is_nan() {
-					*tri_normal = Vector3::new(0.0, 0.0, 1.0);
-				}
-			}
-		} else {
-			for i in 0..self.halfedge.len() {
-				let i = i as i32;
-				atomic_min(i, self.halfedge[i as usize].start_vert);
-			}
+	pub fn calculate_face_normals(&mut self) {
+		if self.face_normal.len() == self.num_tri() {
+			return;
 		}
 
-		for vert in 0..self.num_vert() {
-			let first_edge = vert_halfedge_map[vert].load(AtomicOrdering::SeqCst);
-			// not referenced
-			if first_edge == i32::MAX {
-				self.vert_normal[vert] = Vector3::from_element(0.0);
+		let num_tri = self.num_tri();
+		vec_resize(&mut self.face_normal, num_tri);
+		for face in 0..num_tri {
+			let face = face as i32;
+			let tri_normal = &mut self.face_normal[face as usize];
+			if self.halfedge[(3 * face) as usize].start_vert < 0 {
+				*tri_normal = Vector3::new(0.0, 0.0, 1.0);
 				continue;
 			}
 
-			let mut normal = Vector3::from_element(0.0);
-			self.for_vert(first_edge, |edge| {
-				let tri_verts = Vector3::<i32>::new(
-					self.halfedge[edge as usize].start_vert,
-					self.halfedge[edge as usize].end_vert,
-					self.halfedge[next_halfedge(edge) as usize].end_vert,
-				);
-				let curr_edge = (self.vert_pos[tri_verts[1] as usize]
-					- self.vert_pos[tri_verts[0] as usize])
-					.normalize();
-				let prev_edge = (self.vert_pos[tri_verts[0] as usize]
-					- self.vert_pos[tri_verts[2] as usize])
-					.normalize();
+			let mut tri_verts = Vector3::<i32>::default();
+			for i in 0..3 {
+				let v = self.halfedge[(3 * face + i) as usize].start_vert;
+				tri_verts[i as usize] = v;
+			}
 
-				// if it is not finite, this means that the triangle is degenerate, and we
-				// should just exclude it from the normal calculation...
-				if !curr_edge[0].is_finite() || !prev_edge[0].is_finite() {
-					return;
-				}
-				let dot = -prev_edge.dot(&curr_edge);
-				let phi = if dot >= 1.0 {
-					0.0
-				} else if dot <= -1.0 {
-					f64::consts::PI
-				} else {
-					sun_acos(dot)
-				};
-				normal += phi * self.face_normal[(edge / 3) as usize];
-			});
+			let mut edge = [Vector3::<f64>::default(); 3];
+			for i in 0..3 {
+				let j = next3_usize(i);
+				edge[i] = (self.vert_pos[tri_verts[j] as usize]
+					- self.vert_pos[tri_verts[i] as usize])
+					.normalize();
+			}
 
-			self.vert_normal[vert] = normal.normalize();
+			*tri_normal = edge[0].cross(&edge[1]).normalize();
+			if tri_normal.x.is_nan() {
+				*tri_normal = Vector3::new(0.0, 0.0, 1.0);
+			}
 		}
+	}
+
+	///The algorithm described by Smith's dissertation does not handle the edge
+	///case where faces of p are lying perfectly on top of faces of q ("coincident
+	///faces"). This method determines whether each of this mesh's vertices are
+	///inside or outside of mesh q, by pushing them in one of 8 directions defined
+	///by the 8 octants of 3D space. This is "symbolic perturbation" - pretending
+	///as though the vertices of coincident faces are not actually coincident, in
+	///order to break the tie. For example, an x component of true means to push
+	///that vertex's x in the positive direction, in the hopes of engulfing a
+	///coincident face. Without this, the algorithm doesn't know what to do when
+	///p_vertex.x == q_vertex.x. The method makes use of surface normals to decide
+	///how to break ties.
+	pub fn get_perturbation_map(&self, q: &Self, op: OpType) -> Vec<Vector3<bool>> {
+		let p = self;
+
+		//maps each vertex to a list of surface normals belonging
+		//to coincident faces at that vertex
+		let mut map = vec![Vec::new(); p.num_vert()];
+
+		//loop through every possible combination of triangles.
+		//obviously dumb and slow, just a proof of concept
+		for tri_idx_p in 0..p.num_tri() {
+			let p_nor = p.face_normal[tri_idx_p];
+			let p_idx1 = p.halfedge[tri_idx_p * 3].start_vert as usize;
+			let p_idx2 = p.halfedge[tri_idx_p * 3].end_vert as usize;
+			let p_idx3 = p.halfedge[tri_idx_p * 3 + 1].end_vert as usize;
+			let p_vert1 = p.vert_pos[p_idx1];
+			let p_vert2 = p.vert_pos[p_idx2];
+			let p_vert3 = p.vert_pos[p_idx3];
+
+			for tri_idx_q in 0..q.num_tri() {
+				let q_nor = q.face_normal[tri_idx_q];
+
+				//if adding, search for triangles with opposite surface normals
+				//otherwise, search for triangles with identical surface normals
+				//unsure if using K_PRECISION is correct/necessary
+				let dot = p_nor.dot(&q_nor);
+				if (op == OpType::Add && dot > -1.0 + K_PRECISION)
+					|| (op != OpType::Add && dot < 1.0 - K_PRECISION)
+				{
+					continue;
+				}
+
+				let q_verts = [
+					q.vert_pos[q.halfedge[tri_idx_q * 3].start_vert as usize],
+					q.vert_pos[q.halfedge[tri_idx_q * 3].end_vert as usize],
+					q.vert_pos[q.halfedge[tri_idx_q * 3 + 1].end_vert as usize],
+				];
+
+				//coplanar check
+				if p_nor.dot(&(p_vert1 - q_verts[0])).abs() > K_PRECISION {
+					continue;
+				}
+
+				for q_vert in q_verts {
+					fn add_normal(normals: &mut Vec<Vector3<f64>>, normal: Vector3<f64>) {
+						if !normals.iter().any(|other| {
+							(other - normal)
+								.iter()
+								.all(|&diff| diff.abs() < K_PRECISION)
+						}) {
+							normals.push(normal);
+						}
+					}
+
+					//case 1: q_vert intersects VERTEX of p. perturb 1 vertex
+					if q_vert == p_vert1 {
+						add_normal(&mut map[p_idx1], q_nor);
+						continue;
+					}
+					if q_vert == p_vert2 {
+						add_normal(&mut map[p_idx2], q_nor);
+						continue;
+					}
+					if q_vert == p_vert3 {
+						add_normal(&mut map[p_idx3], q_nor);
+						continue;
+					}
+
+					//compute unnormalized barycentric coords of q_vert within
+					//tri_idx_p, for use in cases 2+3. technically it would be
+					//possible to use these for case 1 too, but would be more
+					//prone to fp error
+					let p_edge12 = p_nor.dot(&(p_vert1 - q_vert).cross(&(p_vert2 - q_vert)));
+					let p_edge23 = p_nor.dot(&(p_vert2 - q_vert).cross(&(p_vert3 - q_vert)));
+					let p_edge31 = p_nor.dot(&(p_vert3 - q_vert).cross(&(p_vert1 - q_vert)));
+
+					//case 2: q_vert intersects EDGE of p. perturb 2 vertices
+					if p_edge12.abs() < K_PRECISION {
+						add_normal(&mut map[p_idx1], q_nor);
+						add_normal(&mut map[p_idx2], q_nor);
+						continue;
+					}
+					if p_edge23.abs() < K_PRECISION {
+						add_normal(&mut map[p_idx2], q_nor);
+						add_normal(&mut map[p_idx3], q_nor);
+						continue;
+					}
+					if p_edge31.abs() < K_PRECISION {
+						add_normal(&mut map[p_idx3], q_nor);
+						add_normal(&mut map[p_idx1], q_nor);
+						continue;
+					}
+
+					//case 3: q_vert intersects TRIANGLE of p. perturb 3 vertices
+					if p_edge12 >= -K_PRECISION
+						&& p_edge23 >= -K_PRECISION
+						&& p_edge31 >= -K_PRECISION
+					{
+						add_normal(&mut map[p_idx1], q_nor);
+						add_normal(&mut map[p_idx2], q_nor);
+						add_normal(&mut map[p_idx3], q_nor);
+					}
+
+					//case 4: vert_q does not intersect in any way
+				}
+			}
+		}
+
+		map.into_iter()
+			.map(|normals| {
+				normals
+					.into_iter()
+					.fold(Vector3::default(), |acc, normal| acc + normal)
+					.map(|component| component >= -K_PRECISION)
+			})
+			.collect()
 	}
 
 	///Remaps all the contained meshIDs to new unique values to represent new
@@ -1183,7 +1235,6 @@ impl Default for MeshBoolImpl {
 			vert_pos: Vec::default(),
 			halfedge: Vec::default(),
 			properties: Vec::default(),
-			vert_normal: Vec::default(),
 			face_normal: Vec::default(),
 			mesh_relation: MeshRelationD::default(),
 			collider: Collider::default(),
