@@ -1,4 +1,5 @@
 use nalgebra::{Matrix2x3, Point3, Vector2, Vector3};
+use rayon::prelude::*;
 
 use crate::AABB;
 use crate::collider::Recorder;
@@ -178,9 +179,9 @@ impl MeshBoolImpl {
 	}
 
 	pub fn calculate_bbox(&mut self) {
-		self.bbox.min = self.vert_pos.iter().fold(
-			Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
-			|a, &b| {
+		self.bbox.min = self.vert_pos.par_iter().cloned().reduce(
+			|| Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
+			|a, b| {
 				if a.x.is_nan() {
 					return b;
 				}
@@ -191,9 +192,9 @@ impl MeshBoolImpl {
 			},
 		);
 
-		self.bbox.max = self.vert_pos.iter().fold(
-			Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
-			|a, &b| {
+		self.bbox.max = self.vert_pos.par_iter().cloned().reduce(
+			|| Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+			|a, b| {
 				if a.x.is_nan() {
 					return b;
 				}

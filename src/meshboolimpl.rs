@@ -1031,34 +1031,36 @@ impl MeshBoolImpl {
 		if self.face_normal.len() != self.num_tri() {
 			let num_tri = self.num_tri();
 			vec_resize(&mut self.face_normal, num_tri);
-			for face in 0..num_tri {
-				let face = face as i32;
-				let tri_normal = &mut self.face_normal[face as usize];
-				if self.halfedge[(3 * face) as usize].start_vert < 0 {
-					*tri_normal = Vector3::new(0.0, 0.0, 1.0);
-					continue;
-				}
+			self.face_normal[0..num_tri]
+				.par_iter_mut()
+				.enumerate()
+				.for_each(|(face, tri_normal)| {
+					let face = face as i32;
+					if self.halfedge[(3 * face) as usize].start_vert < 0 {
+						*tri_normal = Vector3::new(0.0, 0.0, 1.0);
+						return;
+					}
 
-				let mut tri_verts = Vector3::<i32>::default();
-				for i in 0..3 {
-					let v = self.halfedge[(3 * face + i) as usize].start_vert;
-					tri_verts[i as usize] = v;
-					atomic_min(3 * face + i, v);
-				}
+					let mut tri_verts = Vector3::<i32>::default();
+					for i in 0..3 {
+						let v = self.halfedge[(3 * face + i) as usize].start_vert;
+						tri_verts[i as usize] = v;
+						atomic_min(3 * face + i, v);
+					}
 
-				let mut edge = [Vector3::<f64>::default(); 3];
-				for i in 0..3 {
-					let j = next3_usize(i);
-					edge[i] = (self.vert_pos[tri_verts[j] as usize]
-						- self.vert_pos[tri_verts[i] as usize])
-						.normalize();
-				}
+					let mut edge = [Vector3::<f64>::default(); 3];
+					for i in 0..3 {
+						let j = next3_usize(i);
+						edge[i] = (self.vert_pos[tri_verts[j] as usize]
+							- self.vert_pos[tri_verts[i] as usize])
+							.normalize();
+					}
 
-				*tri_normal = edge[0].cross(&edge[1]).normalize();
-				if tri_normal.x.is_nan() {
-					*tri_normal = Vector3::new(0.0, 0.0, 1.0);
-				}
-			}
+					*tri_normal = edge[0].cross(&edge[1]).normalize();
+					if tri_normal.x.is_nan() {
+						*tri_normal = Vector3::new(0.0, 0.0, 1.0);
+					}
+				});
 		} else {
 			self.halfedge
 				.par_iter_mut()
