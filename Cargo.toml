@@ -6,4 +6,5 @@ edition = "2024"
 [features]
 
 [dependencies]
+rayon = "1.11.0"
 nalgebra = { version = "0.34", default-features = false, features = ["std"] }
