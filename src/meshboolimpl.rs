@@ -1115,6 +1115,27 @@ impl MeshBoolImpl {
 		}
 	}
 
+	#[inline]
+	pub fn for_vert_fun<T>(
+		&self,
+		halfedge: i32,
+		mut transform: impl FnMut(i32) -> T,
+		mut binary_op: impl FnMut(i32, &T, &mut T),
+	) {
+		let mut here: T = transform(halfedge);
+		let mut current: i32 = halfedge;
+		loop {
+			let next_halfedge: i32 = next_halfedge(self.halfedge[current as usize].paired_halfedge);
+			let mut next: T = transform(next_halfedge);
+			binary_op(current, &here, &mut next);
+			here = next;
+			current = next_halfedge;
+			if current == halfedge {
+				break;
+			}
+		}
+	}
+
 	///Dereference duplicate property vertices if they are exactly floating-point
 	///equal. These unreferenced properties are then removed by CompactProps.
 	pub fn dedupe_prop_verts(&mut self) {

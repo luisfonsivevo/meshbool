@@ -5,6 +5,16 @@ use nalgebra::{Matrix2x3, Matrix3, Matrix3x4, Point3, Vector3, Vector4};
 use std::ops::MulAssign;
 
 #[inline]
+pub fn safe_normalize(mut v: Vector3<f64>) -> Vector3<f64> {
+	v = v.normalize();
+	if v.x.is_finite() {
+		v
+	} else {
+		Vector3::repeat(0.0)
+	}
+}
+
+#[inline]
 pub fn max_epsilon(min_epsilon: f64, bbox: &AABB) -> f64 {
 	let epsilon = min_epsilon.max(K_PRECISION * bbox.scale());
 	if epsilon.is_finite() { epsilon } else { -1.0 }
