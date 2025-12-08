@@ -6,6 +6,7 @@ use crate::parallel::{inclusive_scan, scatter};
 use crate::utils::permute;
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
 use nalgebra::Point3;
+use rayon::prelude::*;
 use std::mem;
 
 const K_NO_CODE: u32 = 0xFFFFFFFF;
@@ -71,12 +72,13 @@ impl MeshBoolImpl {
 	fn sort_verts(&mut self) {
 		let num_vert = self.num_vert();
 		let mut vert_morton: Vec<u32> = unsafe { vec_uninit(num_vert) };
-		for vert in 0..num_vert {
-			vert_morton[vert] = morton_code(self.vert_pos[vert], self.bbox);
-		}
+		self.vert_pos
+			.par_iter()
+			.map(|vert_p| morton_code(*vert_p, self.bbox))
+			.collect_into_vec(&mut vert_morton);
 
-		let mut vert_new2old: Vec<_> = (0..num_vert as i32).collect();
-		vert_new2old.sort_by_key(|&i| vert_morton[i as usize]);
+		let mut vert_new2old: Vec<_> = (0..num_vert as i32).into_par_iter().collect();
+		vert_new2old.par_sort_by_key(|&i| vert_morton[i as usize]);
 
 		self.reindex_verts(&vert_new2old, num_vert);
 
@@ -100,16 +102,16 @@ impl MeshBoolImpl {
 		let mut vert_old2new: Vec<i32> = unsafe { vec_uninit(old_num_vert) };
 		scatter(0..self.num_vert() as i32, vert_new2old, &mut vert_old2new);
 		let has_prop = self.num_prop() > 0;
-		for edge in &mut self.halfedge {
+		self.halfedge.par_iter_mut().for_each(|edge| {
 			if edge.start_vert < 0 {
-				continue;
+				return;
 			}
 			edge.start_vert = vert_old2new[edge.start_vert as usize];
 			edge.end_vert = vert_old2new[edge.end_vert as usize];
 			if !has_prop {
 				edge.prop_vert = edge.start_vert;
 			}
-		}
+		});
 	}
 
 	fn compact_props(&mut self) {
@@ -143,9 +145,9 @@ impl MeshBoolImpl {
 			}
 		}
 
-		for edge in &mut self.halfedge {
+		self.halfedge.par_iter_mut().for_each(|edge| {
 			edge.prop_vert = prop_old2new[edge.prop_vert as usize];
-		}
+		});
 	}
 
 	///Fills the faceBox and faceMorton input with the bounding boxes and Morton
@@ -157,34 +159,39 @@ impl MeshBoolImpl {
 		unsafe {
 			vec_resize_nofill(face_morton, self.num_tri());
 		}
-		for face in 0..self.num_tri() {
-			// Removed tris are marked by all halfedges having pairedHalfedge
-			// = -1, and this will sort them to the end (the Morton code only
-			// uses the first 30 of 32 bits).
-			if self.halfedge[(3 * face) as usize].paired_halfedge < 0 {
-				face_morton[face] = K_NO_CODE;
-				continue;
-			}
+		face_box
+			.par_iter_mut()
+			.zip_eq(face_morton.par_iter_mut())
+			.enumerate()
+			.for_each(|(face, (face_box_v, face_morton_v))| {
+				// Removed tris are marked by all halfedges having pairedHalfedge
+				// = -1, and this will sort them to the end (the Morton code only
+				// uses the first 30 of 32 bits).
+				if self.halfedge[(3 * face) as usize].paired_halfedge < 0 {
+					*face_morton_v = K_NO_CODE;
+					return;
+				}
 
-			let mut center = Point3::<f64>::new(0.0, 0.0, 0.0);
+				let mut center = Point3::<f64>::new(0.0, 0.0, 0.0);
 
-			for i in 0..3 {
-				let pos = self.vert_pos[self.halfedge[(3 * face + i) as usize].start_vert as usize];
-				center += pos.coords;
-				face_box[face].union_point(pos);
-			}
+				for i in 0..3 {
+					let pos =
+						self.vert_pos[self.halfedge[(3 * face + i) as usize].start_vert as usize];
+					center += pos.coords;
+					face_box_v.union_point(pos);
+				}
 
-			center /= 3.;
+				center /= 3.;
 
-			face_morton[face] = morton_code(center, self.bbox);
-		}
+				*face_morton_v = morton_code(center, self.bbox);
+			});
 	}
 
 	///Sorts the faces of this manifold according to their input Morton code. The
 	///bounding box and Morton code arrays are also sorted accordingly.
 	fn sort_faces(&mut self, face_box: &mut Vec<AABB>, face_morton: &mut Vec<u32>) {
-		let mut face_new2old: Vec<_> = (0..self.num_tri() as i32).collect();
-		face_new2old.sort_by_key(|&i| face_morton[i as usize]);
+		let mut face_new2old: Vec<_> = (0..self.num_tri() as i32).into_par_iter().collect();
+		face_new2old.par_sort_by_key(|&i| face_morton[i as usize]);
 
 		// Tris were flagged for removal with pairedHalfedge = -1 and assigned kNoCode
 		// to sort them to the end, which allows them to be removed.
@@ -217,18 +224,20 @@ impl MeshBoolImpl {
 		let mut face_old2new = unsafe { vec_uninit(old_halfedge.len() / 3) };
 		scatter(0..num_tri as i32, face_new2old, &mut face_old2new);
 
-		for new_face in 0..num_tri {
-			let new_face = new_face as i32;
-			let old_face = face_new2old[new_face as usize];
-			for i in 0..3 {
-				let old_edge = 3 * old_face + i;
-				let mut edge = old_halfedge[old_edge as usize];
-				let paired_face = edge.paired_halfedge / 3;
-				let offset = edge.paired_halfedge - 3 * paired_face;
-				edge.paired_halfedge = 3 * face_old2new[paired_face as usize] + offset;
-				let new_edge = 3 * new_face + i;
-				self.halfedge[new_edge as usize] = edge;
-			}
-		}
+		self.halfedge
+			.par_chunks_mut(3)
+			.enumerate()
+			.for_each(|(new_face, halfedge_chunk)| {
+				let new_face = new_face as i32;
+				let old_face = face_new2old[new_face as usize];
+				for i in 0..3 {
+					let old_edge = 3 * old_face + i;
+					let mut edge = old_halfedge[old_edge as usize];
+					let paired_face = edge.paired_halfedge / 3;
+					let offset = edge.paired_halfedge - 3 * paired_face;
+					edge.paired_halfedge = 3 * face_old2new[paired_face as usize] + offset;
+					halfedge_chunk[i as usize] = edge;
+				}
+			});
 	}
 }

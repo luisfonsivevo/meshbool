@@ -2,6 +2,7 @@ use crate::common::{AABB, AABBOverlap};
 use crate::utils::atomic_add_i32;
 use crate::vec::vec_uninit;
 use nalgebra::{Matrix3x4, Point3, Vector3};
+use rayon::prelude::*;
 use std::fmt::Debug;
 use std::mem;
 
@@ -329,9 +330,11 @@ impl Collider {
 		);
 
 		// copy in leaf node Boxes
-		for i in 0..leaf_bb.len() {
-			self.node_bbox[i * 2] = leaf_bb[i];
-		}
+		self.node_bbox
+			.par_iter_mut()
+			.step_by(2)
+			.enumerate()
+			.for_each(|(i, b)| *b = leaf_bb[i]);
 
 		// create global counters
 		let mut counter = vec![0; self.num_internal()];

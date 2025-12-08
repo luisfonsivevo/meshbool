@@ -5,13 +5,14 @@ edition = "2024"
 
 [lib]
 name = "meshbool"
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = []
 zngur = [ "dep:zngur" ]
 
 [dependencies]
+rayon = "1.11.0"
 nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 
 [build-dependencies]
