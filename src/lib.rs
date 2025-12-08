@@ -234,6 +234,18 @@ impl MeshBool {
 		return (1 - chi / 2) as usize;
 	}
 
+	///Returns the surface area of the manifold.
+	pub fn surface_area(&self) -> f64 {
+		self.meshbool_impl
+			.get_property(properties::Property::SurfaceArea)
+	}
+
+	///Returns the volume of the manifold.
+	pub fn volume(&self) -> f64 {
+		self.meshbool_impl
+			.get_property(properties::Property::Volume)
+	}
+
 	///If this mesh is an original, this returns its meshID that can be referenced
 	///by product manifolds' MeshRelation. If this manifold is a product, this
 	///returns -1.
