@@ -553,6 +553,26 @@ impl MeshBool {
 		return Self::from(meshbool_impl);
 	}
 
+	///Curvature is the inverse of the radius of curvature, and signed such that
+	///positive is convex and negative is concave. There are two orthogonal
+	///principal curvatures at any point on a manifold, with one maximum and the
+	///other minimum. Gaussian curvature is their product, while mean
+	///curvature is their sum. This approximates them for every vertex and assigns
+	///them as vertex properties on the given channels.
+	///
+	///@param gaussian_idx The property channel index in which to store the Gaussian
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	///
+	///@param mean_idx The property channel index in which to store the mean
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	pub fn calculate_curvature(&self, gaussian_idx: i32, mean_idx: i32) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		meshbool_impl.calculate_curvature(gaussian_idx, mean_idx);
+		Self::from(meshbool_impl)
+	}
+
 	///Fills in vertex properties for normal vectors, calculated from the mesh
 	///geometry. Flat faces composed of three or more triangles will remain flat.
 	///
