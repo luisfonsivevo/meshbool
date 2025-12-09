@@ -544,13 +544,14 @@ impl MeshBool {
 						let mut normal = Vector3::<f64>::default();
 						let start = vert_properties.len() - (out_num_prop.lossy_as_usize());
 						for i in 0..3 {
-							normal[i] =
-								vert_properties[start + 3 + (normal_idx as usize) + i].lossy_into();
+							normal[i] = vert_properties
+								[((start + 3 + i) as i32 + normal_idx) as usize]
+								.lossy_into();
 						}
 
 						normal = (run_normal_transform[run] * normal).normalize();
 						for i in 0..3 {
-							vert_properties[start + 3 + (normal_idx as usize) + i] =
+							vert_properties[((start + 3 + i) as i32 + normal_idx) as usize] =
 								F::lossy_from(normal[i]);
 						}
 					}
