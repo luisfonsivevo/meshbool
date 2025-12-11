@@ -7,6 +7,7 @@ use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
 pub use crate::common::AABB;
 pub use crate::common::OpType;
+pub use crate::polygon::triangulate;
 
 mod boolean3;
 mod boolean_result;
