@@ -35,6 +35,23 @@ mod vec;
 mod generated {
 	include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
+	trait PointGetterXY {
+		type T;
+		fn get_x(&self) -> Self::T;
+		fn get_y(&self) -> Self::T;
+	}
+
+	impl PointGetterXY for ::nalgebra::Point2<f64> {
+		type T = f64;
+
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+	}
+
 	trait PointGetter {
 		type T;
 		fn get_x(&self) -> Self::T;
