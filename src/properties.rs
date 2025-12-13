@@ -1,9 +1,10 @@
-use nalgebra::{Point3, Vector3};
+use nalgebra::{Matrix2x3, Point3, Vector2, Vector3};
 
 use crate::AABB;
 use crate::collider::Recorder;
 use crate::meshboolimpl::MeshBoolImpl;
-use crate::shared::{Halfedge, next_halfedge};
+use crate::shared::{Halfedge, get_axis_aligned_projection, next_halfedge};
+use crate::utils::ccw;
 
 struct CheckHalfedges<'a> {
 	halfedges: &'a [Halfedge],
@@ -33,6 +34,31 @@ impl<'a> CheckHalfedges<'a> {
 		good &= halfedge.start_vert == paired.end_vert;
 		good &= halfedge.end_vert == paired.start_vert;
 		good
+	}
+}
+
+struct CheckCCW<'a> {
+	halfedges: &'a [Halfedge],
+	vert_pos: &'a [Point3<f64>],
+	tri_normal: &'a [Vector3<f64>],
+	tol: f64,
+}
+
+impl<'a> CheckCCW<'a> {
+	fn call(&self, face: usize) -> bool {
+		if self.halfedges[3 * face].paired_halfedge < 0 {
+			return true;
+		}
+
+		let projection: Matrix2x3<f64> = get_axis_aligned_projection(self.tri_normal[face].clone());
+		let mut v: [Vector2<f64>; 3] = Default::default();
+		for i in [0, 1, 2] {
+			v[i] =
+				projection * self.vert_pos[self.halfedges[3 * face + i].start_vert as usize].coords;
+		}
+
+		let ccw: i32 = ccw(v[0].into(), v[1].into(), v[2].into(), self.tol.abs());
+		if self.tol > 0.0 { ccw >= 0 } else { ccw == 0 }
 	}
 }
 
@@ -75,6 +101,34 @@ impl MeshBoolImpl {
 			h.start_vert != halfedge[edge + 1].start_vert
 				|| h.end_vert != halfedge[edge + 1].end_vert
 		})
+	}
+
+	///Returns true if all triangles are CCW relative to their triNormals_.
+	pub fn matches_tri_normals(&self) -> bool {
+		if self.halfedge.len() == 0 || self.face_normal.len() != self.num_tri() {
+			return true;
+		}
+		let c_ccw = CheckCCW {
+			halfedges: &self.halfedge,
+			vert_pos: &self.vert_pos,
+			tri_normal: &self.face_normal,
+			tol: 2.0 * self.epsilon,
+		};
+		return (0..self.num_tri()).all(|i| c_ccw.call(i));
+	}
+
+	///Returns the number of triangles that are colinear within epsilon_.
+	pub fn num_degenerate_tris(&self) -> usize {
+		if self.halfedge.len() == 0 || self.face_normal.len() != self.num_tri() {
+			return 1;
+		}
+		let c_ccw = CheckCCW {
+			halfedges: &self.halfedge,
+			vert_pos: &self.vert_pos,
+			tri_normal: &self.face_normal,
+			tol: -1.0 * self.epsilon / 2.0,
+		};
+		return (0..self.num_tri()).filter(|i| c_ccw.call(*i)).count();
 	}
 
 	pub fn calculate_bbox(&mut self) {

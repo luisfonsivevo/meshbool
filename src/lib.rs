@@ -266,6 +266,20 @@ impl MeshBool {
 		return MeshBoolImpl::reserve_ids(n as usize) as u32;
 	}
 
+	///The triangle normal vectors are saved over the course of operations rather
+	///than recalculated to avoid rounding error. This checks that triangles still
+	///match their normal vectors within Precision().
+	pub fn matches_tri_normals(&self) -> bool {
+		self.meshbool_impl.matches_tri_normals()
+	}
+
+	///The number of triangles that are colinear within Precision(). This library
+	///attempts to remove all of these, but it cannot always remove all of them
+	///without changing the mesh by too much.
+	pub fn num_degenerate_tris(&self) -> usize {
+		self.meshbool_impl.num_degenerate_tris()
+	}
+
 	///Move this Manifold in space. This operation can be chained. Transforms are
 	///combined and applied lazily.
 	///
