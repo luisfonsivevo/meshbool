@@ -371,7 +371,7 @@ impl MeshBool {
 	pub fn set_properties(
 		&self,
 		num_prop: i32,
-		prop_func: Option<fn(new_prop: &mut [f64], position: Point3<f64>, old_prop: &[f64])>,
+		prop_func: Option<impl Fn(&mut [f64], Point3<f64>, &[f64])>,
 	) -> Self {
 		let mut meshbool_impl = self.meshbool_impl.clone();
 		let old_num_prop = self.num_prop();
