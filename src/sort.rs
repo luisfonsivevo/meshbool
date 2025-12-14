@@ -1,14 +1,14 @@
 use crate::ManifoldError;
 use crate::MeshGLP;
 use crate::collider::Collider;
-use crate::common::{AABB, LossyFloat, LossyInt};
+// <<<<<<< HEAD
+use crate::common::{AABB, LossyFrom};
 use crate::disjoint_sets::DisjointSets;
 use crate::meshboolimpl::MeshBoolImpl;
 use crate::parallel::{gather, inclusive_scan, scatter};
 use crate::shared::Halfedge;
 use crate::utils::{K_PRECISION, permute};
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
-use crate::{MeshGL, MeshGL64};
 use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
 use std::mem;
@@ -54,22 +54,30 @@ impl ReindexFace<'_> {
 	}
 }
 
-fn merge_mesh_glp<Precision: LossyFloat, I: LossyInt>(mesh: &mut MeshGLP<Precision, I>) -> bool {
+fn merge_mesh_glp<Precision, I>(mesh: &mut MeshGLP<Precision, I>) -> bool
+where
+	Precision: LossyFrom<f64> + Copy,
+	I: LossyFrom<usize> + Copy,
+	usize: LossyFrom<I>,
+	u32: LossyFrom<I>,
+	i32: LossyFrom<I>,
+	f64: From<Precision>,
+{
 	let mut open_edges: Vec<(i32, i32)> = vec![];
 
-	let mut merge: Vec<i32> = (0..mesh.num_vert().lossy_into()).collect();
+	let mut merge: Vec<i32> = (0..mesh.num_vert() as i32).collect();
 	for i in 0..mesh.merge_from_vert.len() {
-		merge[mesh.merge_from_vert[i].lossy_as_usize()] = mesh.merge_to_vert[i].lossy_into();
+		merge[usize::lossy_from(mesh.merge_from_vert[i])] = i32::lossy_from(mesh.merge_to_vert[i]);
 	}
 
 	let num_vert = mesh.num_vert();
 	let num_tri = mesh.num_tri();
 	let next: [i32; 3] = [1, 2, 0];
-	for tri in 0..num_tri.lossy_as_usize() {
+	for tri in 0..num_tri {
 		for i in [0, 1, 2] {
 			let mut edge = (
-				merge[mesh.tri_verts[3 * tri + next[i] as usize].lossy_as_usize()],
-				merge[mesh.tri_verts[3 * tri + i].lossy_as_usize()],
+				merge[usize::lossy_from(mesh.tri_verts[3 * tri + next[i] as usize])],
+				merge[usize::lossy_from(mesh.tri_verts[3 * tri + i])],
 			);
 			let it = open_edges.iter().position(|p| *p == edge);
 			if it.is_none() {
@@ -99,8 +107,8 @@ fn merge_mesh_glp<Precision: LossyFloat, I: LossyInt>(mesh: &mut MeshGLP<Precisi
 		let min_max = vert_prop_d[i..vert_prop_d.len()]
 			.iter()
 			.cloned()
-			.step_by(mesh.num_prop.lossy_as_usize())
-			.map(|f| (f.lossy_into(), f.lossy_into()) as (f64, f64))
+			.step_by(usize::lossy_from(mesh.num_prop))
+			.map(|f| (f64::from(f), f64::from(f)))
 			.reduce(|acc, b| (acc.0.min(b.0), acc.1.max(b.1)))
 			.unwrap_or((core::f64::INFINITY, core::f64::NEG_INFINITY));
 		b_box.min[i] = min_max.0;
@@ -108,11 +116,7 @@ fn merge_mesh_glp<Precision: LossyFloat, I: LossyInt>(mesh: &mut MeshGLP<Precisi
 	}
 
 	// TODO: if Precision == f32
-	let tolerance: f64 = ({
-		let a: f64 = mesh.tolerance.lossy_into();
-		a
-	})
-	.max(
+	let tolerance: f64 = f64::from(mesh.tolerance).max(
 		(if true {
 			core::f32::EPSILON as f64
 		} else {
@@ -128,9 +132,9 @@ fn merge_mesh_glp<Precision: LossyFloat, I: LossyInt>(mesh: &mut MeshGLP<Precisi
 		let vert: i32 = open_verts[i];
 
 		let center: Vector3<f64> = Vector3::new(
-			mesh.vert_properties[mesh.num_prop.lossy_as_usize() * vert as usize].lossy_into(),
-			mesh.vert_properties[mesh.num_prop.lossy_as_usize() * vert as usize + 1].lossy_into(),
-			mesh.vert_properties[mesh.num_prop.lossy_as_usize() * vert as usize + 2].lossy_into(),
+			f64::from(mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize]),
+			f64::from(mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize + 1]),
+			f64::from(mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize + 2]),
 		);
 
 		vert_box[i].min = center.into();
@@ -153,7 +157,7 @@ fn merge_mesh_glp<Precision: LossyFloat, I: LossyInt>(mesh: &mut MeshGLP<Precisi
 	permute(&mut open_verts, &vert_new2old);
 
 	let collider = Collider::new(&vert_box, &vert_morton);
-	let uf = DisjointSets::new(num_vert.lossy_into());
+	let uf = DisjointSets::new(num_vert as u32);
 
 	let mut f = |a: i32, b: i32| {
 		uf.unite(open_verts[a as usize] as u32, open_verts[b as usize] as u32);
@@ -164,14 +168,14 @@ fn merge_mesh_glp<Precision: LossyFloat, I: LossyInt>(mesh: &mut MeshGLP<Precisi
 
 	for i in 0..mesh.merge_from_vert.len() {
 		uf.unite(
-			mesh.merge_from_vert[i].lossy_into(),
-			mesh.merge_to_vert[i].lossy_into(),
+			u32::lossy_from(mesh.merge_from_vert[i]),
+			u32::lossy_from(mesh.merge_to_vert[i]),
 		);
 	}
 
 	mesh.merge_to_vert.clear();
 	mesh.merge_from_vert.clear();
-	for v in 0..num_vert.lossy_as_usize() {
+	for v in 0..num_vert {
 		let merge_to: usize = uf.find(v as u32) as usize;
 		if merge_to != v {
 			mesh.merge_from_vert.push(I::lossy_from(v));
@@ -463,13 +467,15 @@ impl MeshBoolImpl {
 ///multi-material MeshGL was produced, but its merge vectors were lost due to
 ///a round-trip through a file format. Constructing a Manifold from the result
 ///will report an error status if it is not manifold.
-impl MeshGL {
-	pub fn merge(&mut self) -> bool {
-		merge_mesh_glp(self)
-	}
-}
-
-impl MeshGL64 {
+impl<F, I> MeshGLP<F, I>
+where
+	F: LossyFrom<f64> + Copy,
+	I: LossyFrom<usize> + Copy,
+	usize: LossyFrom<I>,
+	u32: LossyFrom<I>,
+	i32: LossyFrom<I>,
+	f64: From<F>,
+{
 	pub fn merge(&mut self) -> bool {
 		merge_mesh_glp(self)
 	}

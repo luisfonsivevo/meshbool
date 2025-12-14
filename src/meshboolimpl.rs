@@ -353,7 +353,7 @@ impl MeshBoolImpl {
 					},
 				);
 			} else {
-				let m: [_; 12] = array::from_fn(|i| f64::from(mesh_gl.run_transform[i * 12]));
+				let m: [_; 12] = array::from_fn(|j| f64::from(mesh_gl.run_transform[i * 12 + j]));
 				manifold.mesh_relation.mesh_id_transform.insert(
 					mesh_id as i32,
 					Relation {
