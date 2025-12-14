@@ -1,14 +1,19 @@
 use crate::ManifoldError;
+use crate::MeshGLP;
 use crate::collider::Collider;
-use crate::common::AABB;
+use crate::common::{AABB, LossyFloat, LossyInt};
+use crate::disjoint_sets::DisjointSets;
 use crate::meshboolimpl::MeshBoolImpl;
 use crate::parallel::{gather, inclusive_scan, scatter};
 use crate::shared::Halfedge;
-use crate::utils::permute;
+use crate::utils::{K_PRECISION, permute};
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
-use nalgebra::Point3;
+use crate::{MeshGL, MeshGL64};
+use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
 use std::mem;
+
+use crate::collider::SimpleRecorder;
 
 const K_NO_CODE: u32 = 0xFFFFFFFF;
 
@@ -47,6 +52,134 @@ impl ReindexFace<'_> {
 			// }
 		}
 	}
+}
+
+fn merge_mesh_glp<Precision: LossyFloat, I: LossyInt>(mesh: &mut MeshGLP<Precision, I>) -> bool {
+	let mut open_edges: Vec<(i32, i32)> = vec![];
+
+	let mut merge: Vec<i32> = (0..mesh.num_vert().lossy_into()).collect();
+	for i in 0..mesh.merge_from_vert.len() {
+		merge[mesh.merge_from_vert[i].lossy_as_usize()] = mesh.merge_to_vert[i].lossy_into();
+	}
+
+	let num_vert = mesh.num_vert();
+	let num_tri = mesh.num_tri();
+	let next: [i32; 3] = [1, 2, 0];
+	for tri in 0..num_tri.lossy_as_usize() {
+		for i in [0, 1, 2] {
+			let mut edge = (
+				merge[mesh.tri_verts[3 * tri + next[i] as usize].lossy_as_usize()],
+				merge[mesh.tri_verts[3 * tri + i].lossy_as_usize()],
+			);
+			let it = open_edges.iter().position(|p| *p == edge);
+			if it.is_none() {
+				core::mem::swap(&mut edge.0, &mut edge.1);
+				open_edges.push(edge);
+			} else {
+				open_edges.remove(it.unwrap());
+			}
+		}
+	}
+	if open_edges.is_empty() {
+		return false;
+	}
+
+	let num_open_vert = open_edges.len();
+	let mut open_verts: Vec<i32> = vec![0; num_open_vert];
+	let mut i = 0;
+	for edge in open_edges.iter() {
+		let vert: i32 = edge.0;
+		open_verts[i] = vert;
+		i += 1;
+	}
+
+	let vert_prop_d: Vec<Precision> = mesh.vert_properties.clone();
+	let mut b_box: AABB = Default::default();
+	for i in [0, 1, 2] {
+		let min_max = vert_prop_d[i..vert_prop_d.len()]
+			.iter()
+			.cloned()
+			.step_by(mesh.num_prop.lossy_as_usize())
+			.map(|f| (f.lossy_into(), f.lossy_into()) as (f64, f64))
+			.reduce(|acc, b| (acc.0.min(b.0), acc.1.max(b.1)))
+			.unwrap_or((core::f64::INFINITY, core::f64::NEG_INFINITY));
+		b_box.min[i] = min_max.0;
+		b_box.max[i] = min_max.1;
+	}
+
+	// TODO: if Precision == f32
+	let tolerance: f64 = ({
+		let a: f64 = mesh.tolerance.lossy_into();
+		a
+	})
+	.max(
+		(if true {
+			core::f32::EPSILON as f64
+		} else {
+			K_PRECISION
+		}) * b_box.scale(),
+	);
+
+	// let mut policy = autoPolicy(numOpenVert, 1e5);
+	let mut vert_box: Vec<AABB> = vec![Default::default(); num_open_vert];
+	let mut vert_morton: Vec<u32> = vec![0; num_open_vert];
+
+	(0..num_open_vert).for_each(|i| {
+		let vert: i32 = open_verts[i];
+
+		let center: Vector3<f64> = Vector3::new(
+			mesh.vert_properties[mesh.num_prop.lossy_as_usize() * vert as usize].lossy_into(),
+			mesh.vert_properties[mesh.num_prop.lossy_as_usize() * vert as usize + 1].lossy_into(),
+			mesh.vert_properties[mesh.num_prop.lossy_as_usize() * vert as usize + 2].lossy_into(),
+		);
+
+		vert_box[i].min = center.into();
+		vert_box[i].min.iter_mut().for_each(|v| {
+			*v -= tolerance / 2.0;
+		});
+		vert_box[i].max = center.into();
+		vert_box[i].max.iter_mut().for_each(|v| {
+			*v += tolerance / 2.0;
+		});
+
+		vert_morton[i] = morton_code(center.into(), b_box);
+	});
+
+	let mut vert_new2old: Vec<_> = (0..num_open_vert as i32).into_iter().collect();
+	vert_new2old.sort_by_key(|&i| vert_morton[i as usize]);
+
+	permute(&mut vert_morton, &vert_new2old);
+	permute(&mut vert_box, &vert_new2old);
+	permute(&mut open_verts, &vert_new2old);
+
+	let collider = Collider::new(&vert_box, &vert_morton);
+	let uf = DisjointSets::new(num_vert.lossy_into());
+
+	let mut f = |a: i32, b: i32| {
+		uf.unite(open_verts[a as usize] as u32, open_verts[b as usize] as u32);
+	};
+
+	let mut recorder = SimpleRecorder::new(&mut f);
+	collider.collisions_from_slice::<true, _, SimpleRecorder<'_>>(&vert_box, &mut recorder, false);
+
+	for i in 0..mesh.merge_from_vert.len() {
+		uf.unite(
+			mesh.merge_from_vert[i].lossy_into(),
+			mesh.merge_to_vert[i].lossy_into(),
+		);
+	}
+
+	mesh.merge_to_vert.clear();
+	mesh.merge_from_vert.clear();
+	for v in 0..num_vert.lossy_as_usize() {
+		let merge_to: usize = uf.find(v as u32) as usize;
+		if merge_to != v {
+			mesh.merge_from_vert.push(I::lossy_from(v));
+			mesh.merge_to_vert.push(I::lossy_from(merge_to));
+		}
+	}
+
+	return true;
 }
 
 impl MeshBoolImpl {
@@ -315,5 +448,29 @@ impl MeshBoolImpl {
 		for new_face in 0..num_tri {
 			reindex_face.call(new_face as u32);
 		}
+	}
+}
+
+///Updates the mergeFromVert and mergeToVert vectors in order to create a
+///manifold solid. If the MeshGL is already manifold, no change will occur and
+///the function will return false. Otherwise, this will merge verts along open
+///edges within tolerance (the maximum of the MeshGL tolerance and the
+///baseline bounding-box tolerance), keeping any from the existing merge
+///vectors, and return true.
+///
+///There is no guarantee the result will be manifold - this is a best-effort
+///helper function designed primarily to aid in the case where a manifold
+///multi-material MeshGL was produced, but its merge vectors were lost due to
+///a round-trip through a file format. Constructing a Manifold from the result
+///will report an error status if it is not manifold.
+impl MeshGL {
+	pub fn merge(&mut self) -> bool {
+		merge_mesh_glp(self)
+	}
+}
+
+impl MeshGL64 {
+	pub fn merge(&mut self) -> bool {
+		merge_mesh_glp(self)
 	}
 }
