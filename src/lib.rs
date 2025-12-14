@@ -335,6 +335,27 @@ impl MeshBool {
 		Self::from(self.meshbool_impl.transform(&m))
 	}
 
+	///Mirror this Manifold over the plane described by the unit form of the given
+	///normal vector. If the length of the normal is zero, an empty Manifold is
+	///returned. This operation can be chained. Transforms are combined and applied
+	///lazily.
+	///
+	///@param normal The normal vector of the plane to be mirrored over
+	pub fn mirror(&self, normal: Vector3<f64>) -> Self {
+		if normal.norm() == 0.0 {
+			return Self::default();
+		}
+		let n = normal.normalize();
+		let m = Matrix3::identity() - (2.0 * (n * n.transpose()));
+		let m = Matrix3x4::from_columns(&[
+			m.column(0).into(),
+			m.column(1).into(),
+			m.column(2).into(),
+			Vector3::default(),
+		]);
+		Self::from(self.meshbool_impl.transform(&m))
+	}
+
 	///Create a new copy of this manifold with updated vertex properties by
 	///supplying a function that takes the existing position and properties as
 	///input. You may specify any number of output properties, allowing creation and
