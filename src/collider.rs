@@ -145,7 +145,7 @@ impl<'a> CreateRadixTree<'a> {
 	}
 }
 
-struct FindCollision<'a, F, AABBOverlapT, RecorderT>
+struct FindCollision<'a, const SELF_COLLISION: bool, F, AABBOverlapT, RecorderT>
 where
 	F: Fn(i32) -> AABBOverlapT,
 	RecorderT: Recorder,
@@ -156,7 +156,8 @@ where
 	recorder: &'a mut RecorderT,
 }
 
-impl<'a, F, AABBOverlapT, RecorderT> FindCollision<'a, F, AABBOverlapT, RecorderT>
+impl<'a, const SELF_COLLISION: bool, F, AABBOverlapT, RecorderT>
+	FindCollision<'a, SELF_COLLISION, F, AABBOverlapT, RecorderT>
 where
 	F: Fn(i32) -> AABBOverlapT,
 	AABBOverlapT: Debug,
@@ -168,8 +169,9 @@ where
 		let overlaps = self.node_bbox[node as usize].does_overlap(&(self.f)(query_idx));
 		if overlaps && is_leaf(node) {
 			let leaf_idx = node2leaf(node);
-			//in c++ selfCollision is always false
-			self.recorder.record(query_idx, leaf_idx);
+			if !SELF_COLLISION || leaf_idx != query_idx {
+				self.recorder.record(query_idx, leaf_idx);
+			}
 		}
 
 		overlaps && is_internal(node) //should traverse into node
@@ -359,7 +361,7 @@ impl Collider {
 	///If parallel is false, the function will run in sequential mode.
 	///
 	///If thread local storage is not needed, use SimpleRecorder.
-	pub fn collisions_from_slice<AABBOverlapT, RecorderT>(
+	pub fn collisions_from_slice<const SELF_COLLISION: bool, AABBOverlapT, RecorderT>(
 		&self,
 		queries_in: &[AABBOverlapT],
 		recorder: &mut impl Recorder,
@@ -375,7 +377,7 @@ impl Collider {
 		let f = |i: i32| -> AABBOverlapT { queries_in[i as usize].clone() };
 		// TODO: if parallel
 		for query_idx in 0..queries_in.len() {
-			FindCollision {
+			FindCollision::<SELF_COLLISION, _, _, _> {
 				f: &f,
 				node_bbox: &self.node_bbox,
 				internal_children: &self.internal_children,
@@ -385,7 +387,7 @@ impl Collider {
 		}
 	}
 
-	pub fn collisions_from_fn<F, AABBOverlapT, RecorderT>(
+	pub fn collisions_from_fn<const SELF_COLLISION: bool, F, AABBOverlapT, RecorderT>(
 		&self,
 		f: F,
 		n: usize,
@@ -400,7 +402,7 @@ impl Collider {
 			return;
 		}
 		for query_idx in 0..n {
-			FindCollision {
+			FindCollision::<SELF_COLLISION, _, _, _> {
 				f: &f,
 				node_bbox: &self.node_bbox,
 				internal_children: &self.internal_children,

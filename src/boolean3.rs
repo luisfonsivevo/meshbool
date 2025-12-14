@@ -500,7 +500,7 @@ fn intersect12(
 	};
 
 	b.collider
-		.collisions_from_fn::<_, _, Kernel12Recorder>(f, a.halfedge.len(), &mut recorder);
+		.collisions_from_fn::<false, _, _, Kernel12Recorder>(f, a.halfedge.len(), &mut recorder);
 
 	let result = recorder.local_store;
 	let mut p1q2 = result.p1q2;

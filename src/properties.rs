@@ -354,7 +354,11 @@ impl MeshBoolImpl {
 
 		let mut recorder = MinDistanceRecorder::new(&self, other);
 		self.collider
-			.collisions_from_slice::<_, MinDistanceRecorder>(&face_box_other, &mut recorder, false);
+			.collisions_from_slice::<false, _, MinDistanceRecorder>(
+				&face_box_other,
+				&mut recorder,
+				false,
+			);
 		let min_distance_squared = recorder.get().min(search_length * search_length);
 		return min_distance_squared.sqrt();
 	}
