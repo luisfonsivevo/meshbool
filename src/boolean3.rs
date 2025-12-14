@@ -581,6 +581,7 @@ fn winding03(
 	w03
 }
 
+#[derive(Clone)]
 pub struct Boolean3<'a> {
 	pub in_p: &'a MeshBoolImpl,
 	pub in_q: &'a MeshBoolImpl,
