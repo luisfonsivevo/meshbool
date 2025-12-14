@@ -328,3 +328,40 @@ pub fn sun_acos(x: f64) -> f64 {
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
 	a * (1.0 - t) + b * t
 }
+
+///Sine function where multiples of 90 degrees come out exact.
+///
+///@param x Angle in degrees.
+#[inline]
+pub fn sind(mut x: f64) -> f64 {
+	if !x.is_finite() {
+		return x.sin();
+	}
+	if x < 0.0 {
+		return -sind(-x);
+	}
+	let quo: i32;
+	(x, quo) = remquo(x.abs(), 90.0);
+	match quo % 4 {
+		0 => x.to_radians().sin(),
+		1 => x.to_radians().cos(),
+		2 => -x.to_radians().sin(),
+		3 => -x.to_radians().cos(),
+		_ => 0.0,
+	}
+}
+
+///Cosine function where multiples of 90 degrees come out exact.
+///
+///@param x Angle in degrees.
+#[inline]
+pub fn cosd(x: f64) -> f64 {
+	sind(x + 90.0)
+}
+
+#[inline]
+fn remquo(x: f64, y: f64) -> (f64, i32) {
+	let r = x.rem_euclid(y); // IEEE remainder
+	let q = ((x - r) / y).round() as i32;
+	(r, q)
+}
