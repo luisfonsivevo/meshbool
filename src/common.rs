@@ -37,6 +37,11 @@ impl AABB {
 		self.max - self.min
 	}
 
+	///Returns the center point of the Box.
+	pub fn center(&self) -> Vector3<f64> {
+		0.5 * (self.max.coords + self.min.coords)
+	}
+
 	///Returns the absolute-largest coordinate value of any contained
 	///point.
 	pub fn scale(&self) -> f64 {
