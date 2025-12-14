@@ -869,6 +869,27 @@ impl MeshBoolImpl {
 		self.status = status;
 	}
 
+	pub fn warp(&mut self, warp_func: impl Fn(&mut Point3<f64>)) {
+		self.warp_batch(|vecs| {
+			vecs.iter_mut().for_each(|v| warp_func(v));
+		});
+	}
+
+	pub fn warp_batch(&mut self, warp_func: impl Fn(&mut [Point3<f64>])) {
+		warp_func(&mut self.vert_pos);
+		self.calculate_bbox();
+		if !self.is_finite() {
+			self.make_empty(ManifoldError::NonFiniteVertex);
+			return;
+		}
+		self.update();
+		self.face_normal.clear(); // force recalculation of triNormal
+		self.set_epsilon(-1.0, false);
+		self.finish();
+		self.mark_coplanar();
+		self.mesh_relation.original_id = -1;
+	}
+
 	///Transform this Manifold in space. The first three columns form a 3x3 matrix
 	///transform and the last is a translation vector. This operation can be
 	///chained. Transforms are combined and applied lazily.
