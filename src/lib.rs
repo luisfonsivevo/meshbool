@@ -741,6 +741,14 @@ impl MeshBool {
 		self ^ &halfspace(self.bounding_box(), normal, origin_offset)
 	}
 
+	///Returns the cross section of this object parallel to the X-Y plane at the
+	///specified Z height, defaulting to zero. Using a height equal to the bottom of
+	///the bounding box will return the bottom faces, while using a height equal to
+	///the top of the bounding box will return empty.
+	pub fn slice(&self, height: f64) -> Polygons {
+		self.meshbool_impl.slice(height)
+	}
+
 	fn get_mesh_gl_impl<F, I>(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGLP<F, I>
 	where
 		F: LossyFrom<f64> + Copy,
