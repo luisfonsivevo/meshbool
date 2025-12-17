@@ -1,5 +1,5 @@
 use crate::boolean3::Boolean3;
-use crate::common::{LossyFrom, Polygons};
+use crate::common::{FloatKind, LossyFrom, Polygons};
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
@@ -589,7 +589,7 @@ impl MeshBool {
 
 	fn get_mesh_gl_impl<F, I>(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGLP<F, I>
 	where
-		F: LossyFrom<f64> + Copy,
+		F: LossyFrom<f64> + Copy + FloatKind,
 		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
@@ -602,9 +602,12 @@ impl MeshBool {
 		let update_normals = !is_original && normal_idx >= 0;
 
 		let out_num_prop = 3 + num_prop;
-		let tolerance = meshbool_impl
+		let mut tolerance = meshbool_impl
 			.tolerance
 			.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale());
+		if F::is_f32() {
+			tolerance = tolerance.max(core::f64::EPSILON * meshbool_impl.bbox.scale());
+		}
 
 		let mut tri_verts: Vec<I> = vec![I::lossy_from(0); 3 * num_tri];
 
@@ -814,7 +817,7 @@ impl MeshBool {
 
 	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
 	where
-		F: LossyFrom<f64> + Copy,
+		F: LossyFrom<f64> + Copy + FloatKind,
 		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,

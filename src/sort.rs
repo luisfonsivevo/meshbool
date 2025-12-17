@@ -1,6 +1,7 @@
 use crate::ManifoldError;
 use crate::MeshGLP;
 use crate::collider::Collider;
+use crate::common::FloatKind;
 use crate::common::{AABB, LossyFrom};
 use crate::disjoint_sets::DisjointSets;
 use crate::meshboolimpl::MeshBoolImpl;
@@ -26,12 +27,12 @@ fn morton_code(position: Point3<f64>, bbox: AABB) -> u32 {
 
 fn merge_mesh_glp<Precision, I>(mesh: &mut MeshGLP<Precision, I>) -> bool
 where
-	Precision: LossyFrom<f64> + Copy,
+	Precision: LossyFrom<f64> + Copy + FloatKind,
 	I: LossyFrom<usize> + Copy,
 	usize: LossyFrom<I>,
 	u32: LossyFrom<I>,
 	i32: LossyFrom<I>,
-	f64: LossyFrom<Precision>,
+	f64: From<Precision>,
 {
 	let mut open_edges: Vec<(i32, i32)> = vec![];
 
@@ -78,16 +79,15 @@ where
 			.iter()
 			.cloned()
 			.step_by(usize::lossy_from(mesh.num_prop))
-			.map(|f| (f64::lossy_from(f), f64::lossy_from(f)))
+			.map(|f| (f64::from(f), f64::from(f)))
 			.reduce(|acc, b| (acc.0.min(b.0), acc.1.max(b.1)))
 			.unwrap_or((core::f64::INFINITY, core::f64::NEG_INFINITY));
 		b_box.min[i] = min_max.0;
 		b_box.max[i] = min_max.1;
 	}
 
-	// TODO: if Precision == f32
-	let tolerance: f64 = f64::lossy_from(mesh.tolerance).max(
-		(if true {
+	let tolerance: f64 = f64::from(mesh.tolerance).max(
+		(if Precision::is_f32() {
 			core::f32::EPSILON as f64
 		} else {
 			K_PRECISION
@@ -102,13 +102,9 @@ where
 		let vert: i32 = open_verts[i];
 
 		let center: Vector3<f64> = Vector3::new(
-			f64::lossy_from(mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize]),
-			f64::lossy_from(
-				mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize + 1],
-			),
-			f64::lossy_from(
-				mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize + 2],
-			),
+			f64::from(mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize]),
+			f64::from(mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize + 1]),
+			f64::from(mesh.vert_properties[usize::lossy_from(mesh.num_prop) * vert as usize + 2]),
 		);
 
 		vert_box[i].min = center.into();
@@ -387,12 +383,12 @@ impl MeshBoolImpl {
 ///will report an error status if it is not manifold.
 impl<F, I> MeshGLP<F, I>
 where
-	F: LossyFrom<f64> + Copy,
+	F: LossyFrom<f64> + Copy + FloatKind,
 	I: LossyFrom<usize> + Copy,
 	usize: LossyFrom<I>,
 	u32: LossyFrom<I>,
 	i32: LossyFrom<I>,
-	f64: LossyFrom<F>,
+	f64: From<F>,
 {
 	pub fn merge(&mut self) -> bool {
 		merge_mesh_glp(self)
