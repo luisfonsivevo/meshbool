@@ -1,6 +1,7 @@
 use crate::ManifoldError;
 use crate::MeshGLP;
 use crate::collider::Collider;
+use crate::common::FloatKind;
 // <<<<<<< HEAD
 use crate::common::{AABB, LossyFrom};
 use crate::disjoint_sets::DisjointSets;
@@ -56,7 +57,7 @@ impl ReindexFace<'_> {
 
 fn merge_mesh_glp<Precision, I>(mesh: &mut MeshGLP<Precision, I>) -> bool
 where
-	Precision: LossyFrom<f64> + Copy,
+	Precision: LossyFrom<f64> + Copy + FloatKind,
 	I: LossyFrom<usize> + Copy,
 	usize: LossyFrom<I>,
 	u32: LossyFrom<I>,
@@ -115,9 +116,8 @@ where
 		b_box.max[i] = min_max.1;
 	}
 
-	// TODO: if Precision == f32
 	let tolerance: f64 = f64::from(mesh.tolerance).max(
-		(if true {
+		(if Precision::is_f32() {
 			core::f32::EPSILON as f64
 		} else {
 			K_PRECISION
@@ -469,7 +469,7 @@ impl MeshBoolImpl {
 ///will report an error status if it is not manifold.
 impl<F, I> MeshGLP<F, I>
 where
-	F: LossyFrom<f64> + Copy,
+	F: LossyFrom<f64> + Copy + FloatKind,
 	I: LossyFrom<usize> + Copy,
 	usize: LossyFrom<I>,
 	u32: LossyFrom<I>,
