@@ -1,5 +1,5 @@
 use crate::MeshBool;
-use crate::common::{Polygons, Quality, SimplePolygon};
+use crate::common::{Polygons, Quality, SimplePolygon, cosd, sind};
 use crate::meshboolimpl::{MeshBoolImpl, Shape};
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector2, Vector3};
@@ -77,8 +77,8 @@ impl MeshBool {
 		let d_phi = 360.0 / (n as f64);
 		for i in 0..n {
 			circle[i as usize] = Point2::<f64>::new(
-				radius_low * (d_phi * i as f64).to_radians().cos(),
-				radius_low * (d_phi * i as f64).to_radians().sin(),
+				radius_low * cosd(d_phi * i as f64),
+				radius_low * sind(d_phi * i as f64),
 			);
 		}
 
@@ -183,12 +183,7 @@ impl MeshBool {
 			let alpha = (i as f64) / (n_divisions as f64);
 			let phi = alpha * twist_degrees;
 			let scale = Vector2::new(1.0, 1.0).lerp(&scale_top, alpha);
-			let rotation = Matrix2::new(
-				phi.to_radians().cos(),
-				-phi.to_radians().sin(),
-				phi.to_radians().sin(),
-				phi.to_radians().cos(),
-			);
+			let rotation = Matrix2::new(cosd(phi), -sind(phi), sind(phi), cosd(phi));
 			let transform = Matrix2::new(scale.x, 0.0, 0.0, scale.y) * rotation;
 			let mut j = 0;
 			let mut idx = 0;
