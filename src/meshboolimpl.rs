@@ -761,7 +761,7 @@ impl MeshBoolImpl {
 						ids[i as usize] = i;
 					}
 
-					ids.sort_unstable_by_key(|&i| {
+					ids[start as usize..end as usize].sort_unstable_by_key(|&i| {
 						let entry = &entries[i as usize];
 						(entry.large_vert, entry.tri)
 					});
