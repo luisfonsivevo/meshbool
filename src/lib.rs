@@ -370,6 +370,42 @@ impl MeshBool {
 		Self::from(self.meshbool_impl.transform(&m))
 	}
 
+	///This function does not change the topology, but allows the vertices to be
+	///moved according to any arbitrary input function. It is easy to create a
+	///function that warps a geometrically valid object into one which overlaps, but
+	///that is not checked here, so it is up to the user to choose their function
+	///with discretion.
+	///
+	///@param warpFunc A function that modifies a given vertex position.
+	pub fn warp(&self, warp_func: impl Fn(&mut Point3<f64>)) -> Self {
+		let old_impl = &self.meshbool_impl;
+		if old_impl.status != ManifoldError::NoError {
+			let mut meshbool_impl = MeshBoolImpl::default();
+			meshbool_impl.status = old_impl.status;
+			return Self::from(meshbool_impl);
+		}
+		let mut meshbool_impl = old_impl.clone();
+		meshbool_impl.warp(warp_func);
+		Self::from(meshbool_impl)
+	}
+
+	///Same as Manifold::Warp but calls warpFunc with with
+	///a VecView which is roughly equivalent to std::span
+	///pointing to all vec3 elements to be modified in-place
+	///
+	///@param warpFunc A function that modifies multiple vertex positions.
+	pub fn warp_batch(&self, warp_func: impl Fn(&mut [Point3<f64>])) -> Self {
+		let old_impl = &self.meshbool_impl;
+		if old_impl.status != ManifoldError::NoError {
+			let mut meshbool_impl = MeshBoolImpl::default();
+			meshbool_impl.status = old_impl.status;
+			return Self::from(meshbool_impl);
+		}
+		let mut meshbool_impl = old_impl.clone();
+		meshbool_impl.warp_batch(warp_func);
+		Self::from(meshbool_impl)
+	}
+
 	///Create a new copy of this manifold with updated vertex properties by
 	///supplying a function that takes the existing position and properties as
 	///input. You may specify any number of output properties, allowing creation and
