@@ -568,7 +568,7 @@ fn winding03(
 	let mut recorder = SimpleRecorder::new(&mut recorderf);
 	let f = |i| a.vert_pos[verts[i as usize] as usize];
 	b.collider
-		.collisions_from_fn::<_, _, SimpleRecorder<'_>>(f, verts.len(), &mut recorder);
+		.collisions_from_fn::<false, _, _, SimpleRecorder<'_>>(f, verts.len(), &mut recorder);
 	// flood fill
 	for i in 0..w03.len() {
 		let root = u_a.find(i as u32) as usize;
