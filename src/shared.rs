@@ -1,7 +1,7 @@
 use crate::common::AABB;
 use crate::utils::{K_PRECISION, mat3, next3_usize};
 use core::f64;
-use nalgebra::{Matrix2x3, Matrix3, Matrix3x4, Point3, Vector3};
+use nalgebra::{Matrix2x3, Matrix3, Matrix3x4, Point3, Vector3, Vector4};
 use std::ops::MulAssign;
 
 #[inline]
@@ -134,7 +134,19 @@ impl Halfedge {
 	}
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Default, Clone)]
+pub struct Barycentric {
+	pub tri: i32,
+	pub uvw: Vector4<f64>,
+}
+
+impl Barycentric {
+	pub fn new(tri: i32, uvw: Vector4<f64>) -> Self {
+		Self { tri, uvw }
+	}
+}
+
+#[derive(Default, Copy, Clone, Debug)]
 pub struct TriRef {
 	/// The unique ID of the mesh instance of this triangle. If .meshID and .tri
 	/// match for two triangles, then they are coplanar and came from the same
@@ -156,4 +168,58 @@ impl TriRef {
 			&& self.coplanar_id == other.coplanar_id
 			&& self.face_id == other.face_id
 	}
+}
+
+///This is a temporary edge structure which only stores edges forward and
+///references the halfedge it was created from.
+#[derive(Default, Clone)]
+pub struct TmpEdge {
+	pub first: i32,
+	pub second: i32,
+	pub halfedge_idx: i32,
+}
+
+impl TmpEdge {
+	fn new(start: i32, end: i32, idx: i32) -> Self {
+		Self {
+			first: start.min(end),
+			second: start.max(end),
+			halfedge_idx: idx,
+		}
+	}
+}
+
+// impl Ord for TmpEdge {
+// 	// bool operator<(const TmpEdge& other) const {
+// 	// }
+// 	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+// 		if self.first == other.first {
+// 			self.second.cmp(&other.second)
+// 		} else {
+// 			self.first.cmp(&other.first)
+// 		}
+// 	}
+// }
+
+#[inline]
+pub fn create_tmp_edges(halfedge: &[Halfedge]) -> Vec<TmpEdge> {
+	let edges: Vec<TmpEdge>;
+	edges = (0..halfedge.len())
+		.into_iter()
+		.map(|idx| {
+			let half = &halfedge[idx];
+			TmpEdge::new(
+				half.start_vert,
+				half.end_vert,
+				if half.is_forward() { idx as i32 } else { -1 },
+			)
+		})
+		.collect();
+
+	let edges: Vec<TmpEdge> = edges
+		.into_iter()
+		.filter(|edge| !(edge.halfedge_idx < 0))
+		.collect();
+	debug_assert_eq!(edges.len(), halfedge.len() / 2, "Not oriented!");
+	return edges;
 }

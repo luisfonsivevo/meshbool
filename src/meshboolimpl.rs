@@ -14,6 +14,19 @@ use std::f64;
 use std::mem;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering as AtomicOrdering};
 
+#[derive(Clone)]
+pub struct BaryIndices {
+	pub tri: i32,
+	pub start4: i32,
+	pub end4: i32,
+}
+
+impl BaryIndices {
+	pub fn new(tri: i32, start4: i32, end4: i32) -> Self {
+		Self { tri, start4, end4 }
+	}
+}
+
 #[derive(Copy, Clone)]
 #[allow(unused)]
 pub enum Shape {

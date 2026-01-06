@@ -324,3 +324,7 @@ pub fn sun_acos(x: f64) -> f64 {
 	let w = r(z) * s + c;
 	2.0 * (df + w)
 }
+
+pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+	a * (1.0 - t) + b * t
+}

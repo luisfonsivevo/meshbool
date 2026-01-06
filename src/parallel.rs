@@ -76,6 +76,17 @@ where
 	}
 }
 
+pub fn exclusive_scan_iter<IO>(input: impl Iterator<Item = IO>, output: &mut [IO], init: IO)
+where
+	IO: Copy + AddAssign,
+{
+	let mut acc = init;
+	for (idx, i) in input.enumerate() {
+		output[idx] = acc;
+		acc += i;
+	}
+}
+
 ///Copy values in the input range `[first, last)` to the output range
 ///starting from `d_first` that satisfies the predicate `pred`,
 ///i.e. `pred(x) == true`, and returns `d_first + n` where `n` is the number of
