@@ -196,6 +196,7 @@ pub trait LossyFrom<T: Copy> {
 	fn lossy_from(other: T) -> Self;
 }
 
+//impl lossyfrom instead!
 pub trait LossyInto<T: Copy> {
 	fn lossy_into(self) -> T;
 }
@@ -210,17 +211,23 @@ where
 	}
 }
 
-impl LossyFrom<i32> for usize {
-	fn lossy_from(other: i32) -> Self {
-		other as usize
-	}
+//lossy_from!([from, from, from], to)
+macro_rules! lossy_from {
+	([ $( $f:ty ),* ], $t:ty) => {
+		$(
+			impl LossyFrom<$f> for $t {
+				fn lossy_from(other: $f) -> Self {
+					other as Self
+				}
+			}
+		)*
+	};
 }
 
-impl LossyFrom<usize> for usize {
-	fn lossy_from(other: usize) -> Self {
-		other
-	}
-}
+lossy_from!([i32, u32, usize], usize);
+lossy_from!([usize], u32);
+lossy_from!([f64], f64);
+lossy_from!([f64], f32);
 
 pub struct OrderedF64(pub f64);
 
