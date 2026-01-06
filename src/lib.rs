@@ -234,6 +234,18 @@ impl MeshBool {
 		return (1 - chi / 2) as usize;
 	}
 
+	///Returns the surface area of the manifold.
+	pub fn surface_area(&self) -> f64 {
+		self.meshbool_impl
+			.get_property(properties::Property::SurfaceArea)
+	}
+
+	///Returns the volume of the manifold.
+	pub fn volume(&self) -> f64 {
+		self.meshbool_impl
+			.get_property(properties::Property::Volume)
+	}
+
 	///If this mesh is an original, this returns its meshID that can be referenced
 	///by product manifolds' MeshRelation. If this manifold is a product, this
 	///returns -1.
@@ -401,6 +413,25 @@ impl MeshBool {
 		}
 
 		meshbool_impl.num_prop = num_prop;
+		return Self::from(meshbool_impl);
+	}
+
+	///Fills in vertex properties for normal vectors, calculated from the mesh
+	///geometry. Flat faces composed of three or more triangles will remain flat.
+	///
+	///@param normalIdx The property channel in which to store the X
+	///values of the normals. The X, Y, and Z channels will be sequential. The
+	///property set will be automatically expanded such that NumProp will be at
+	///least normalIdx + 3.
+	///
+	///@param minSharpAngle Any edges with angles greater than this value will
+	///remain sharp, getting different normal vector properties on each side of the
+	///edge. By default, no edges are sharp and all normals are shared. With a value
+	///of zero, the model is faceted and all normals match their triangle normals,
+	///but in this case it would be better not to calculate normals at all.
+	pub fn calculate_normals(&self, normal_idx: i32, min_sharp_angle: f64) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		meshbool_impl.set_normals(normal_idx, min_sharp_angle);
 		return Self::from(meshbool_impl);
 	}
 

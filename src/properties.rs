@@ -10,6 +10,12 @@ struct CheckHalfedges<'a> {
 	halfedges: &'a [Halfedge],
 }
 
+#[derive(Eq, PartialEq)]
+pub enum Property {
+	Volume,
+	SurfaceArea,
+}
+
 impl<'a> CheckHalfedges<'a> {
 	fn call(&self, edge: usize) -> bool {
 		let halfedge = self.halfedges[edge];
@@ -129,6 +135,46 @@ impl MeshBoolImpl {
 			tol: -1.0 * self.epsilon / 2.0,
 		};
 		return (0..self.num_tri()).filter(|i| c_ccw.call(*i)).count();
+	}
+
+	pub fn get_property(&self, prop: Property) -> f64 {
+		if self.is_empty() {
+			return 0.0;
+		}
+
+		let volume = |tri: usize| {
+			let v: Vector3<f64> = self.vert_pos[self.halfedge[3 * tri].start_vert as usize].coords;
+			let cross_p: Vector3<f64> = (self.vert_pos
+				[self.halfedge[3 * tri + 1].start_vert as usize]
+				- v)
+				.coords
+				.cross(&(self.vert_pos[self.halfedge[3 * tri + 2].start_vert as usize] - v).coords);
+			cross_p.dot(&v) / 6.0
+		};
+
+		let area = |tri: usize| {
+			let v: Vector3<f64> = self.vert_pos[self.halfedge[3 * tri].start_vert as usize].coords;
+			(self.vert_pos[self.halfedge[3 * tri + 1].start_vert as usize] - v)
+				.coords
+				.cross(&(self.vert_pos[self.halfedge[3 * tri + 2].start_vert as usize] - v).coords)
+				.norm() / 2.0
+		};
+
+		// Kahan summation
+		let mut value: f64 = 0.0;
+		let mut value_compensation: f64 = 0.0;
+		for i in 0..self.num_tri() {
+			let value1: f64 = if prop == Property::SurfaceArea {
+				area(i)
+			} else {
+				volume(i)
+			};
+			let t: f64 = value + value1;
+			value_compensation += (value - t) + value1;
+			value = t;
+		}
+		value += value_compensation;
+		return value;
 	}
 
 	pub fn calculate_bbox(&mut self) {
