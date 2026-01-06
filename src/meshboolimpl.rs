@@ -10,9 +10,8 @@ use crate::{ManifoldError, MeshGLP};
 use nalgebra::{Matrix3x4, Point3, Vector3, Vector4};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeMap, HashMap};
-use std::f64;
-use std::mem;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering as AtomicOrdering};
+use std::{array, f64, mem};
 
 #[derive(Copy, Clone)]
 #[allow(unused)]
@@ -340,7 +339,7 @@ impl MeshBoolImpl {
 					},
 				);
 			} else {
-				let m: [_; 12] = std::array::from_fn(|i| f64::from(mesh_gl.run_transform[i * 12]));
+				let m: [_; 12] = array::from_fn(|i| f64::from(mesh_gl.run_transform[i * 12]));
 				manifold.mesh_relation.mesh_id_transform.insert(
 					mesh_id as i32,
 					Relation {
@@ -516,7 +515,7 @@ impl MeshBoolImpl {
 		for h in &self.halfedge {
 			if h.start_vert >= 0 {
 				let atomic_ref: &AtomicI32 =
-					unsafe { std::mem::transmute(&keep[h.start_vert as usize]) };
+					unsafe { mem::transmute(&keep[h.start_vert as usize]) };
 				atomic_ref.store(1, AtomicOrdering::Relaxed);
 			}
 		}
