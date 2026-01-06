@@ -246,6 +246,22 @@ pub trait Recorder {
 	fn record(&mut self, query_idx: i32, leaf_idx: i32);
 }
 
+pub struct SimpleRecorder<'a> {
+	pub f: &'a mut dyn FnMut(i32, i32),
+}
+
+impl<'a> SimpleRecorder<'a> {
+	pub fn new(f: &'a mut dyn FnMut(i32, i32)) -> Self {
+		Self { f }
+	}
+}
+
+impl<'a> Recorder for SimpleRecorder<'a> {
+	fn record(&mut self, query_idx: i32, leaf_idx: i32) {
+		(self.f)(query_idx, leaf_idx);
+	}
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct Collider {
 	node_bbox: Vec<AABB>,
