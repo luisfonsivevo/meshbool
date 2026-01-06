@@ -8,6 +8,7 @@ use crate::utils::{atomic_add_i32, mat3, mat4, next3_i32, next3_usize};
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
 use crate::{ManifoldError, MeshGL};
 use nalgebra::{Matrix3x4, Point3, Vector3, Vector4};
+use rayon::prelude::*;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeMap, HashMap};
 use std::f64;
@@ -173,7 +174,7 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 			} else {
 				self.tri_vert[tri as usize][j as usize]
 			};
-			debug_assert!(v0 != v1, "topological degeneracy");
+			debug_assert_ne!(v0, v1, "topological degeneracy");
 			self.halfedges[e as usize] = Halfedge {
 				start_vert: v0,
 				end_vert: v1,
@@ -569,26 +570,32 @@ impl MeshBoolImpl {
 			tri: i32,
 		}
 		let mut tri_priority = unsafe { vec_uninit(num_tri) };
-		for tri in 0..num_tri {
-			self.mesh_relation.tri_ref[tri].coplanar_id = -1;
-			if self.halfedge[3 * tri].start_vert < 0 {
-				tri_priority[tri] = TriPriority {
-					area2: 0.0,
-					tri: tri as i32,
-				};
-				continue;
-			}
+		self.mesh_relation.tri_ref[0..num_tri]
+			.par_iter_mut()
+			.enumerate()
+			.map(|(tri, mesh_relation_tri_ref)| {
+				mesh_relation_tri_ref.coplanar_id = -1;
+				if self.halfedge[3 * tri].start_vert < 0 {
+					TriPriority {
+						area2: 0.0,
+						tri: tri as i32,
+					}
+				} else {
+					let v = self.vert_pos[self.halfedge[3 * tri].start_vert as usize];
+					TriPriority {
+						area2: (self.vert_pos[self.halfedge[3 * tri].end_vert as usize] - v)
+							.cross(
+								&(self.vert_pos[self.halfedge[3 * tri + 1].end_vert as usize] - v),
+							)
+							.magnitude_squared(),
+						tri: tri as i32,
+					}
+				}
+			})
+			.collect_into_vec(&mut tri_priority);
 
-			let v = self.vert_pos[self.halfedge[3 * tri].start_vert as usize];
-			tri_priority[tri] = TriPriority {
-				area2: (self.vert_pos[self.halfedge[3 * tri].end_vert as usize] - v)
-					.cross(&(self.vert_pos[self.halfedge[3 * tri + 1].end_vert as usize] - v))
-					.magnitude_squared(),
-				tri: tri as i32,
-			};
-		}
-
-		tri_priority.sort_by(|a, b| b.area2.partial_cmp(&a.area2).unwrap_or(CmpOrdering::Equal));
+		tri_priority
+			.par_sort_by(|a, b| b.area2.partial_cmp(&a.area2).unwrap_or(CmpOrdering::Equal));
 
 		let mut interior_halfedges: Vec<i32> = Vec::default();
 		for tp in &tri_priority {
@@ -688,8 +695,8 @@ impl MeshBoolImpl {
 					}
 				}
 
-				let mut ids: Vec<i32> = (0..num_halfedge).collect();
-				ids.sort_by_key(|&i| edge[i as usize]);
+				let mut ids: Vec<i32> = (0..num_halfedge).into_par_iter().collect();
+				ids.par_sort_by_key(|&i| edge[i as usize]);
 				ids
 			} else {
 				// For larger vertex count, we separate the ids into slices for halfedges
@@ -761,7 +768,7 @@ impl MeshBoolImpl {
 						ids[i as usize] = i;
 					}
 
-					ids.sort_unstable_by_key(|&i| {
+					ids[start as usize..end as usize].sort_unstable_by_key(|&i| {
 						let entry = &entries[i as usize];
 						(entry.large_vert, entry.tri)
 					});
@@ -965,6 +972,7 @@ impl MeshBoolImpl {
 		vec_resize(&mut self.vert_normal, num_vert);
 
 		let vert_halfedge_map: Vec<AtomicI32> = (0..self.num_vert())
+			.into_par_iter()
 			.map(|_| AtomicI32::new(i32::MAX))
 			.collect();
 
@@ -1018,10 +1026,13 @@ impl MeshBoolImpl {
 				}
 			}
 		} else {
-			for i in 0..self.halfedge.len() {
-				let i = i as i32;
-				atomic_min(i, self.halfedge[i as usize].start_vert);
-			}
+			self.halfedge
+				.par_iter_mut()
+				.enumerate()
+				.for_each(|(i, halfedge)| {
+					let i = i as i32;
+					atomic_min(i, halfedge.start_vert);
+				});
 		}
 
 		for vert in 0..self.num_vert() {
