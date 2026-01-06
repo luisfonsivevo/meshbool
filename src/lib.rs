@@ -714,7 +714,7 @@ impl MeshBool {
 		let impl2 = &cutter.meshbool_impl;
 
 		let boolean = Boolean3::new(impl1, impl2, OpType::Subtract);
-		let result1 = boolean.clone().result(OpType::Intersect);
+		let result1 = boolean.result(OpType::Intersect);
 		let result2 = boolean.result(OpType::Subtract);
 		(Self::from(result1), Self::from(result2))
 	}
