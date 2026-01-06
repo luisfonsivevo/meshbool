@@ -72,6 +72,61 @@ mod generated {
 		}
 	}
 
+	trait PointGetterW: PointGetter {
+		fn get_w(&self) -> Self::T;
+	}
+
+	impl PointGetter for ::nalgebra::Vector4<f64> {
+		type T = f64;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	impl PointGetterW for ::nalgebra::Vector4<f64> {
+		fn get_w(&self) -> Self::T {
+			self.w
+		}
+	}
+
+	impl PointGetter for ::nalgebra::Vector3<i32> {
+		type T = i32;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	impl PointGetter for ::nalgebra::Vector4<i32> {
+		type T = i32;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	impl PointGetterW for ::nalgebra::Vector4<i32> {
+		fn get_w(&self) -> Self::T {
+			self.w
+		}
+	}
+
 	trait ManifoldErrorExport {
 		fn is_no_error(&self) -> bool;
 		fn is_non_finite_vertex(&self) -> bool;
