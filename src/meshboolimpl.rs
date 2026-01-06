@@ -174,10 +174,10 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 }
 
 impl MeshBoolImpl {
-	pub fn from_meshgl<Precision, I>(mesh_gl: &MeshGLP<Precision, I>) -> Self
+	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
 	where
-		Precision: LossyFrom<f64> + Copy,
-		f64: From<Precision>,
+		F: LossyFrom<f64> + Copy,
+		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
 	{
@@ -314,15 +314,15 @@ impl MeshBoolImpl {
 		let start_id = MeshBoolImpl::reserve_ids(1.max(mesh_gl.run_original_id.len()));
 		let mut run_original_id = mesh_gl.run_original_id.clone();
 		if run_original_id.is_empty() {
-			run_original_id.push(I::lossy_from(start_id));
+			run_original_id.push(start_id as u32);
 		}
 		for i in 0..run_original_id.len() {
 			let mesh_id = start_id + i;
-			let original_id = usize::lossy_from(run_original_id[i]);
+			let original_id = run_original_id[i] as i32;
 			for tri in (run_index[i] / 3)..(run_index[i + 1] / 3) {
 				let r = &mut tri_ref[tri as usize];
 				r.mesh_id = mesh_id as i32;
-				r.original_id = original_id as i32;
+				r.original_id = original_id;
 				r.face_id = if mesh_gl.face_id.is_empty() {
 					-1
 				} else {
@@ -335,7 +335,7 @@ impl MeshBoolImpl {
 				manifold.mesh_relation.mesh_id_transform.insert(
 					mesh_id as i32,
 					Relation {
-						original_id: original_id as i32,
+						original_id: original_id,
 						..Relation::default() //in c++ the rest were uninitialized
 					},
 				);
@@ -344,7 +344,7 @@ impl MeshBoolImpl {
 				manifold.mesh_relation.mesh_id_transform.insert(
 					mesh_id as i32,
 					Relation {
-						original_id: original_id as i32,
+						original_id: original_id,
 						transform: [
 							[m[0], m[1], m[2]],
 							[m[3], m[4], m[5]],

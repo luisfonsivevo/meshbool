@@ -115,9 +115,9 @@ fn test() {
 ///MeshGL is an alias for the standard single-precision version. Use MeshGL64 to
 ///output the full double precision that Manifold uses internally.
 #[derive(Debug, Clone)]
-pub struct MeshGLP<Precision, I>
+pub struct MeshGLP<F, I>
 where
-	Precision: LossyFrom<f64>,
+	F: LossyFrom<f64>,
 	I: LossyFrom<usize>,
 {
 	/// Number of properties per vertex, always >= 3.
@@ -125,7 +125,7 @@ where
 	/// Flat, GL-style interleaved list of all vertex properties: propVal =
 	/// vertProperties[vert * numProp + propIdx]. The first three properties are
 	/// always the position x, y, z. The stride of the array is numProp.
-	pub vert_properties: Vec<Precision>,
+	pub vert_properties: Vec<F>,
 	/// The vertex indices of the three triangle corners in CCW (from the outside)
 	/// order, for each triangle.
 	pub tri_verts: Vec<I>,
@@ -149,12 +149,12 @@ where
 	/// have the same ID, e.g. representing different copies of the same input
 	/// mesh. If you create an input MeshGL that you want to be able to reference
 	/// as one or more originals, be sure to set unique values from ReserveIDs().
-	pub run_original_id: Vec<I>,
+	pub run_original_id: Vec<u32>,
 	/// Optional: For each run, a 3x4 transform is stored representing how the
 	/// corresponding original mesh was transformed to create this triangle run.
 	/// This matrix is stored in column-major order and the length of the overall
 	/// vector is 12 * runOriginalID.size().
-	pub run_transform: Vec<Precision>,
+	pub run_transform: Vec<F>,
 	/// Optional: Length NumTri, contains the source face ID this triangle comes
 	/// from. Simplification will maintain all edges between triangles with
 	/// different faceIDs. Input faceIDs will be maintained to the outputs, but if
@@ -165,18 +165,18 @@ where
 	/// used will be the maximum of this and a baseline tolerance from the size of
 	/// the bounding box. Any edge shorter than tolerance may be collapsed.
 	/// Tolerance may be enlarged when floating point error accumulates.
-	pub tolerance: Precision,
+	pub tolerance: F,
 }
 
-impl<Precision, I> Default for MeshGLP<Precision, I>
+impl<F, I> Default for MeshGLP<F, I>
 where
-	Precision: LossyFrom<f64>,
+	F: LossyFrom<f64>,
 	I: LossyFrom<usize>,
 {
 	fn default() -> Self {
 		Self {
 			num_prop: I::lossy_from(3),
-			tolerance: Precision::lossy_from(0.0),
+			tolerance: F::lossy_from(0.0),
 			vert_properties: Vec::default(),
 			tri_verts: Vec::default(),
 			merge_from_vert: Vec::default(),
@@ -189,9 +189,9 @@ where
 	}
 }
 
-impl<Precision, I> MeshGLP<Precision, I>
+impl<F, I> MeshGLP<F, I>
 where
-	Precision: LossyFrom<f64>,
+	F: LossyFrom<f64>,
 	I: LossyFrom<usize> + Copy,
 	usize: LossyFrom<I>,
 {
@@ -200,9 +200,9 @@ where
 	}
 }
 
-impl<Precision, I> MeshGLP<Precision, I>
+impl<F, I> MeshGLP<F, I>
 where
-	Precision: LossyFrom<f64>,
+	F: LossyFrom<f64>,
 	I: LossyFrom<usize>,
 {
 	pub fn num_tri(&self) -> usize {
@@ -401,13 +401,10 @@ impl MeshBool {
 		Self::from(Boolean3::new(&self.meshbool_impl, &other.meshbool_impl, op).result(op))
 	}
 
-	fn get_mesh_gl_impl<Precision, I>(
-		meshbool_impl: &MeshBoolImpl,
-		normal_idx: i32,
-	) -> MeshGLP<Precision, I>
+	fn get_mesh_gl_impl<F, I>(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGLP<F, I>
 	where
-		Precision: LossyFrom<f64> + Copy,
-		f64: From<Precision>,
+		F: LossyFrom<f64> + Copy,
+		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
 	{
@@ -436,13 +433,13 @@ impl MeshBool {
 		}
 
 		let mut run_index: Vec<I> = Vec::new();
-		let mut run_original_id: Vec<I> = Vec::new();
-		let mut run_transform: Vec<Precision> = Vec::new();
+		let mut run_original_id: Vec<u32> = Vec::new();
+		let mut run_transform: Vec<F> = Vec::new();
 
 		let mut run_normal_transform: Vec<Matrix3<f64>> = Vec::new();
 		let mut add_run = |tri, rel: Relation| {
 			run_index.push(I::lossy_from(3 * tri));
-			run_original_id.push(I::lossy_from(rel.original_id as usize));
+			run_original_id.push(rel.original_id as u32);
 			if update_normals {
 				run_normal_transform.push(
 					normal_transform(&rel.transform) * (if rel.back_side { -1.0 } else { 1.0 }),
@@ -452,7 +449,7 @@ impl MeshBool {
 			if !is_original {
 				for col in 0..4 {
 					for row in 0..3 {
-						run_transform.push(Precision::lossy_from(rel.transform[(row, col)]))
+						run_transform.push(F::lossy_from(rel.transform[(row, col)]))
 					}
 				}
 			}
@@ -492,13 +489,12 @@ impl MeshBool {
 
 		// Early return for no props
 		if num_prop == 0 {
-			let mut vert_properties: Vec<Precision> =
-				vec![Precision::lossy_from(0.0); 3 * num_vert];
+			let mut vert_properties: Vec<F> = vec![F::lossy_from(0.0); 3 * num_vert];
 			for i in 0..num_vert {
 				let v = meshbool_impl.vert_pos[i];
-				vert_properties[3 * i] = Precision::lossy_from(v.x);
-				vert_properties[3 * i + 1] = Precision::lossy_from(v.y);
-				vert_properties[3 * i + 2] = Precision::lossy_from(v.z);
+				vert_properties[3 * i] = F::lossy_from(v.x);
+				vert_properties[3 * i + 1] = F::lossy_from(v.y);
+				vert_properties[3 * i + 2] = F::lossy_from(v.z);
 			}
 
 			return MeshGLP {
@@ -511,14 +507,14 @@ impl MeshBool {
 				run_original_id,
 				run_transform,
 				face_id,
-				tolerance: Precision::lossy_from(tolerance),
+				tolerance: F::lossy_from(tolerance),
 			};
 		}
 
 		// Duplicate verts with different props
 		let mut vert2idx: Vec<i32> = vec![-1; meshbool_impl.num_vert()];
 		let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); meshbool_impl.num_vert()];
-		let mut vert_properties: Vec<Precision> = Vec::with_capacity(num_vert * out_num_prop);
+		let mut vert_properties: Vec<F> = Vec::with_capacity(num_vert * out_num_prop);
 
 		let mut merge_from_vert: Vec<I> = Vec::new();
 		let mut merge_to_vert: Vec<I> = Vec::new();
@@ -550,11 +546,10 @@ impl MeshBool {
 					bin.push(Vector2::new(prop, idx as i32));
 
 					for p in 0..3 {
-						vert_properties
-							.push(Precision::lossy_from(meshbool_impl.vert_pos[vert][p]));
+						vert_properties.push(F::lossy_from(meshbool_impl.vert_pos[vert][p]));
 					}
 					for p in 0..num_prop {
-						vert_properties.push(Precision::lossy_from(
+						vert_properties.push(F::lossy_from(
 							meshbool_impl.properties[(prop as usize) * num_prop + p],
 						));
 					}
@@ -570,7 +565,7 @@ impl MeshBool {
 						normal = (run_normal_transform[run] * normal).normalize();
 						for i in 0..3 {
 							vert_properties[start + 3 + (normal_idx as usize) + i] =
-								Precision::lossy_from(normal[i]);
+								F::lossy_from(normal[i]);
 						}
 					}
 
@@ -594,7 +589,7 @@ impl MeshBool {
 			run_original_id,
 			run_transform,
 			face_id,
-			tolerance: Precision::lossy_from(tolerance),
+			tolerance: F::lossy_from(tolerance),
 		}
 	}
 
@@ -630,10 +625,10 @@ impl MeshBool {
 		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
 	}
 
-	pub fn from_meshgl<Precision, I>(mesh_gl: &MeshGLP<Precision, I>) -> Self
+	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
 	where
-		Precision: LossyFrom<f64> + Copy,
-		f64: From<Precision>,
+		F: LossyFrom<f64> + Copy,
+		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
 	{
