@@ -7,6 +7,7 @@ use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
 
 pub use crate::common::AABB;
 pub use crate::common::OpType;
+pub use crate::polygon::triangulate;
 
 mod boolean3;
 mod boolean_result;
@@ -267,6 +268,20 @@ impl MeshBool {
 		return MeshBoolImpl::reserve_ids(n as usize) as u32;
 	}
 
+	///The triangle normal vectors are saved over the course of operations rather
+	///than recalculated to avoid rounding error. This checks that triangles still
+	///match their normal vectors within Precision().
+	pub fn matches_tri_normals(&self) -> bool {
+		self.meshbool_impl.matches_tri_normals()
+	}
+
+	///The number of triangles that are colinear within Precision(). This library
+	///attempts to remove all of these, but it cannot always remove all of them
+	///without changing the mesh by too much.
+	pub fn num_degenerate_tris(&self) -> usize {
+		self.meshbool_impl.num_degenerate_tris()
+	}
+
 	///Move this Manifold in space. This operation can be chained. Transforms are
 	///combined and applied lazily.
 	///
@@ -319,6 +334,27 @@ impl MeshBool {
 	///
 	///@param m The affine transform matrix to apply to all the vertices.
 	pub fn transform(&self, m: &Matrix3x4<f64>) -> Self {
+		Self::from(self.meshbool_impl.transform(&m))
+	}
+
+	///Mirror this Manifold over the plane described by the unit form of the given
+	///normal vector. If the length of the normal is zero, an empty Manifold is
+	///returned. This operation can be chained. Transforms are combined and applied
+	///lazily.
+	///
+	///@param normal The normal vector of the plane to be mirrored over
+	pub fn mirror(&self, normal: Vector3<f64>) -> Self {
+		if normal.norm() == 0.0 {
+			return Self::default();
+		}
+		let n = normal.normalize();
+		let m = Matrix3::identity() - (2.0 * (n * n.transpose()));
+		let m = Matrix3x4::from_columns(&[
+			m.column(0).into(),
+			m.column(1).into(),
+			m.column(2).into(),
+			Vector3::default(),
+		]);
 		Self::from(self.meshbool_impl.transform(&m))
 	}
 
