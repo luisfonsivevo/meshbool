@@ -210,6 +210,9 @@ where
 	}
 }
 
+pub type MeshGL32 = MeshGLP<f32, u32>;
+pub type MeshGL64 = MeshGLP<f64, u64>;
+
 #[derive(Default, Debug, Clone)]
 pub struct MeshBool {
 	meshbool_impl: MeshBoolImpl,
@@ -606,7 +609,7 @@ impl MeshBool {
 	///the applied transforms and front/back side. normalIdx + 3 must be <=
 	///numProp, and all original MeshGLs must use the same channels for their
 	///normals.
-	pub fn get_mesh_gl_32(&self, normal_idx: i32) -> MeshGLP<f32, u32> {
+	pub fn get_mesh_gl_32(&self, normal_idx: i32) -> MeshGL32 {
 		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
 	}
 
@@ -622,7 +625,7 @@ impl MeshBool {
 	///the applied transforms and front/back side. normalIdx + 3 must be <=
 	///numProp, and all original MeshGLs must use the same channels for their
 	///normals.
-	pub fn get_mesh_gl_64(&self, normal_idx: i32) -> MeshGLP<f64, usize> {
+	pub fn get_mesh_gl_64(&self, normal_idx: i32) -> MeshGL64 {
 		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
 	}
 

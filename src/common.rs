@@ -224,7 +224,8 @@ macro_rules! lossy_from {
 	};
 }
 
-lossy_from!([i32, u32, usize], usize);
+lossy_from!([i32, u32, u64, usize], usize);
+lossy_from!([usize], u64);
 lossy_from!([usize], u32);
 lossy_from!([f64], f64);
 lossy_from!([f64], f32);
