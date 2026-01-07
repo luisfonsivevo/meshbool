@@ -1,5 +1,5 @@
 use crate::collider::Collider;
-use crate::common::{AABB, LossyFrom, sun_acos};
+use crate::common::{AABB, FloatKind, LossyFrom, sun_acos};
 use crate::disjoint_sets::DisjointSets;
 use crate::mesh_fixes::{FlipTris, transform_normal};
 use crate::parallel::exclusive_scan_in_place;
@@ -8,6 +8,7 @@ use crate::utils::{atomic_add_i32, mat3, mat4, next3_i32, next3_usize};
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
 use crate::{ManifoldError, MeshGLP};
 use nalgebra::{Matrix3x4, Point3, Vector3, Vector4};
+use rayon::prelude::*;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering as AtomicOrdering};
@@ -172,7 +173,7 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 			} else {
 				self.tri_vert[tri as usize][j as usize]
 			};
-			debug_assert!(v0 != v1, "topological degeneracy");
+			debug_assert_ne!(v0, v1, "topological degeneracy");
 			self.halfedges[e as usize] = Halfedge {
 				start_vert: v0,
 				end_vert: v1,
@@ -188,7 +189,7 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 impl MeshBoolImpl {
 	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
 	where
-		F: LossyFrom<f64> + Copy,
+		F: LossyFrom<f64> + Copy + FloatKind,
 		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
@@ -415,7 +416,7 @@ impl MeshBoolImpl {
 		}
 
 		manifold.calculate_bbox();
-		manifold.set_epsilon(-1.0f64, false); // TODO: if Precision == float
+		manifold.set_epsilon(-1.0f64, F::is_f32());
 
 		// we need to split pinched verts before calculating vertex normals, because
 		// the algorithm doesn't work with pinched verts
@@ -582,26 +583,32 @@ impl MeshBoolImpl {
 			tri: i32,
 		}
 		let mut tri_priority = unsafe { vec_uninit(num_tri) };
-		for tri in 0..num_tri {
-			self.mesh_relation.tri_ref[tri].coplanar_id = -1;
-			if self.halfedge[3 * tri].start_vert < 0 {
-				tri_priority[tri] = TriPriority {
-					area2: 0.0,
-					tri: tri as i32,
-				};
-				continue;
-			}
+		self.mesh_relation.tri_ref[0..num_tri]
+			.par_iter_mut()
+			.enumerate()
+			.map(|(tri, mesh_relation_tri_ref)| {
+				mesh_relation_tri_ref.coplanar_id = -1;
+				if self.halfedge[3 * tri].start_vert < 0 {
+					TriPriority {
+						area2: 0.0,
+						tri: tri as i32,
+					}
+				} else {
+					let v = self.vert_pos[self.halfedge[3 * tri].start_vert as usize];
+					TriPriority {
+						area2: (self.vert_pos[self.halfedge[3 * tri].end_vert as usize] - v)
+							.cross(
+								&(self.vert_pos[self.halfedge[3 * tri + 1].end_vert as usize] - v),
+							)
+							.magnitude_squared(),
+						tri: tri as i32,
+					}
+				}
+			})
+			.collect_into_vec(&mut tri_priority);
 
-			let v = self.vert_pos[self.halfedge[3 * tri].start_vert as usize];
-			tri_priority[tri] = TriPriority {
-				area2: (self.vert_pos[self.halfedge[3 * tri].end_vert as usize] - v)
-					.cross(&(self.vert_pos[self.halfedge[3 * tri + 1].end_vert as usize] - v))
-					.magnitude_squared(),
-				tri: tri as i32,
-			};
-		}
-
-		tri_priority.sort_by(|a, b| b.area2.partial_cmp(&a.area2).unwrap_or(CmpOrdering::Equal));
+		tri_priority
+			.par_sort_by(|a, b| b.area2.partial_cmp(&a.area2).unwrap_or(CmpOrdering::Equal));
 
 		let mut interior_halfedges: Vec<i32> = Vec::default();
 		for tp in &tri_priority {
@@ -701,8 +708,8 @@ impl MeshBoolImpl {
 					}
 				}
 
-				let mut ids: Vec<i32> = (0..num_halfedge).collect();
-				ids.sort_by_key(|&i| edge[i as usize]);
+				let mut ids: Vec<i32> = (0..num_halfedge).into_par_iter().collect();
+				ids.par_sort_by_key(|&i| edge[i as usize]);
 				ids
 			} else {
 				// For larger vertex count, we separate the ids into slices for halfedges
@@ -999,6 +1006,7 @@ impl MeshBoolImpl {
 		vec_resize(&mut self.vert_normal, num_vert);
 
 		let vert_halfedge_map: Vec<AtomicI32> = (0..self.num_vert())
+			.into_par_iter()
 			.map(|_| AtomicI32::new(i32::MAX))
 			.collect();
 
@@ -1023,39 +1031,44 @@ impl MeshBoolImpl {
 		if self.face_normal.len() != self.num_tri() {
 			let num_tri = self.num_tri();
 			vec_resize(&mut self.face_normal, num_tri);
-			for face in 0..num_tri {
-				let face = face as i32;
-				let tri_normal = &mut self.face_normal[face as usize];
-				if self.halfedge[(3 * face) as usize].start_vert < 0 {
-					*tri_normal = Vector3::new(0.0, 0.0, 1.0);
-					continue;
-				}
+			self.face_normal[0..num_tri]
+				.par_iter_mut()
+				.enumerate()
+				.for_each(|(face, tri_normal)| {
+					let face = face as i32;
+					if self.halfedge[(3 * face) as usize].start_vert < 0 {
+						*tri_normal = Vector3::new(0.0, 0.0, 1.0);
+						return;
+					}
 
-				let mut tri_verts = Vector3::<i32>::default();
-				for i in 0..3 {
-					let v = self.halfedge[(3 * face + i) as usize].start_vert;
-					tri_verts[i as usize] = v;
-					atomic_min(3 * face + i, v);
-				}
+					let mut tri_verts = Vector3::<i32>::default();
+					for i in 0..3 {
+						let v = self.halfedge[(3 * face + i) as usize].start_vert;
+						tri_verts[i as usize] = v;
+						atomic_min(3 * face + i, v);
+					}
 
-				let mut edge = [Vector3::<f64>::default(); 3];
-				for i in 0..3 {
-					let j = next3_usize(i);
-					edge[i] = (self.vert_pos[tri_verts[j] as usize]
-						- self.vert_pos[tri_verts[i] as usize])
-						.normalize();
-				}
+					let mut edge = [Vector3::<f64>::default(); 3];
+					for i in 0..3 {
+						let j = next3_usize(i);
+						edge[i] = (self.vert_pos[tri_verts[j] as usize]
+							- self.vert_pos[tri_verts[i] as usize])
+							.normalize();
+					}
 
-				*tri_normal = edge[0].cross(&edge[1]).normalize();
-				if tri_normal.x.is_nan() {
-					*tri_normal = Vector3::new(0.0, 0.0, 1.0);
-				}
-			}
+					*tri_normal = edge[0].cross(&edge[1]).normalize();
+					if tri_normal.x.is_nan() {
+						*tri_normal = Vector3::new(0.0, 0.0, 1.0);
+					}
+				});
 		} else {
-			for i in 0..self.halfedge.len() {
-				let i = i as i32;
-				atomic_min(i, self.halfedge[i as usize].start_vert);
-			}
+			self.halfedge
+				.par_iter_mut()
+				.enumerate()
+				.for_each(|(i, halfedge)| {
+					let i = i as i32;
+					atomic_min(i, halfedge.start_vert);
+				});
 		}
 
 		for vert in 0..self.num_vert() {

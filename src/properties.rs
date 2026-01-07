@@ -1,10 +1,11 @@
 use nalgebra::{Matrix2x3, Point3, Vector2, Vector3};
+use rayon::prelude::*;
 
 use crate::AABB;
 use crate::collider::Recorder;
 use crate::meshboolimpl::MeshBoolImpl;
 use crate::shared::{Halfedge, get_axis_aligned_projection, next_halfedge};
-use crate::utils::ccw;
+use crate::utils::{atomic_add_f64, ccw};
 
 struct CheckHalfedges<'a> {
 	halfedges: &'a [Halfedge],
@@ -14,6 +15,56 @@ struct CheckHalfedges<'a> {
 pub enum Property {
 	Volume,
 	SurfaceArea,
+}
+
+struct CurvatureAngles<'a> {
+	mean_curvature: &'a mut [f64],
+	gaussian_curvature: &'a mut [f64],
+	area: &'a mut [f64],
+	degree: &'a mut [f64],
+	halfedge: &'a [Halfedge],
+	vert_pos: &'a [Point3<f64>],
+	tri_normal: &'a [Vector3<f64>],
+}
+
+impl<'a> CurvatureAngles<'a> {
+	pub fn call(&mut self, tri: usize) {
+		let mut edge: [Vector3<f64>; 3] = Default::default();
+		let mut edge_length = Vector3::repeat(0.0_f64);
+		for i in [0, 1, 2] {
+			let start_vert: i32 = self.halfedge[3 * tri + i].start_vert;
+			let end_vert: i32 = self.halfedge[3 * tri + i].end_vert;
+			edge[i] = self.vert_pos[end_vert as usize] - self.vert_pos[start_vert as usize];
+			edge_length[i] = edge[i].norm();
+			edge[i] /= edge_length[i];
+			let neighbor_tri: i32 = self.halfedge[3 * tri + i].paired_halfedge / 3;
+			let dihedral: f64 = 0.25
+				* edge_length[i]
+				* self.tri_normal[tri]
+					.cross(&self.tri_normal[neighbor_tri as usize])
+					.dot(&edge[i])
+					.asin();
+			unsafe {
+				atomic_add_f64(&mut self.mean_curvature[start_vert as usize], dihedral);
+				atomic_add_f64(&mut self.mean_curvature[end_vert as usize], dihedral);
+				atomic_add_f64(&mut self.degree[start_vert as usize], 1.0);
+			}
+		}
+
+		let mut phi = Vector3::<f64>::default();
+		phi[0] = (-edge[2].dot(&edge[0])).acos();
+		phi[1] = (-edge[0].dot(&edge[1])).acos();
+		phi[2] = core::f64::consts::PI - phi[0] - phi[1];
+		let area3: f64 = edge_length[0] * edge_length[1] * edge[0].cross(&edge[1]).norm() / 6.0;
+
+		for i in [0, 1, 2] {
+			let vert: i32 = self.halfedge[3 * tri + i].start_vert;
+			unsafe {
+				atomic_add_f64(&mut self.gaussian_curvature[vert as usize], -phi[i]);
+				atomic_add_f64(&mut self.area[vert as usize], area3);
+			}
+		}
+	}
 }
 
 impl<'a> CheckHalfedges<'a> {
@@ -177,10 +228,82 @@ impl MeshBoolImpl {
 		return value;
 	}
 
+	pub fn calculate_curvature(&mut self, gaussian_idx: i32, mean_idx: i32) {
+		if self.is_empty() {
+			return;
+		}
+		if gaussian_idx < 0 && mean_idx < 0 {
+			return;
+		}
+		let mut vert_mean_curvature: Vec<f64> = vec![0.0; self.num_vert()];
+		let mut vert_gaussian_curvature: Vec<f64> = vec![core::f64::consts::TAU; self.num_vert()];
+		let mut vert_area: Vec<f64> = vec![0.0; self.num_vert()];
+		let mut degree: Vec<f64> = vec![0.0; self.num_vert()];
+		{
+			let mut ca = CurvatureAngles {
+				mean_curvature: &mut vert_mean_curvature,
+				gaussian_curvature: &mut vert_gaussian_curvature,
+				area: &mut vert_area,
+				degree: &mut degree,
+				halfedge: &self.halfedge,
+				vert_pos: &self.vert_pos,
+				tri_normal: &self.face_normal,
+			};
+			(0..self.num_tri()).for_each(|i| ca.call(i));
+		}
+		(0..self.num_vert()).for_each(|vert| {
+			let factor: f64 = degree[vert] / (6.0 * vert_area[vert]);
+			vert_mean_curvature[vert] *= factor;
+			vert_gaussian_curvature[vert] *= factor;
+		});
+
+		let old_num_prop: i32 = self.num_prop() as i32;
+		let num_prop: i32 = old_num_prop.max(gaussian_idx.max(mean_idx) + 1);
+		let old_properties = self.properties.clone();
+		self.properties = vec![0.0; num_prop as usize * self.num_prop_vert()];
+		self.num_prop = num_prop;
+
+		let mut counters: Vec<u8> = vec![0; self.num_prop_vert()];
+		(0..self.num_tri()).for_each(|tri| {
+			for i in [0, 1, 2] {
+				let edge = &self.halfedge[3 * tri + i];
+				let vert: i32 = edge.start_vert;
+				let prop_vert: i32 = edge.prop_vert;
+
+				let old = unsafe {
+					use core::sync::atomic::{AtomicU8, Ordering};
+					let ptr = &mut counters[prop_vert as usize] as *const u8 as *const AtomicU8;
+
+					// Convert to a shared reference
+					let atomic_ref = &*ptr;
+
+					atomic_ref.swap(1u8, Ordering::SeqCst)
+				};
+				if old == 1 {
+					continue;
+				}
+
+				for p in 0..old_num_prop {
+					self.properties[(num_prop * prop_vert + p) as usize] =
+						old_properties[(old_num_prop * prop_vert + p) as usize];
+				}
+
+				if gaussian_idx >= 0 {
+					self.properties[(num_prop * prop_vert + gaussian_idx) as usize] =
+						vert_gaussian_curvature[vert as usize];
+				}
+				if mean_idx >= 0 {
+					self.properties[(num_prop * prop_vert + mean_idx) as usize] =
+						vert_mean_curvature[vert as usize];
+				}
+			}
+		});
+	}
+
 	pub fn calculate_bbox(&mut self) {
-		self.bbox.min = self.vert_pos.iter().fold(
-			Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
-			|a, &b| {
+		self.bbox.min = self.vert_pos.par_iter().cloned().reduce(
+			|| Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
+			|a, b| {
 				if a.x.is_nan() {
 					return b;
 				}
@@ -191,9 +314,9 @@ impl MeshBoolImpl {
 			},
 		);
 
-		self.bbox.max = self.vert_pos.iter().fold(
-			Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
-			|a, &b| {
+		self.bbox.max = self.vert_pos.par_iter().cloned().reduce(
+			|| Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+			|a, b| {
 				if a.x.is_nan() {
 					return b;
 				}
@@ -231,7 +354,11 @@ impl MeshBoolImpl {
 
 		let mut recorder = MinDistanceRecorder::new(&self, other);
 		self.collider
-			.collisions_from_slice::<_, MinDistanceRecorder>(&face_box_other, &mut recorder, false);
+			.collisions_from_slice::<false, _, MinDistanceRecorder>(
+				&face_box_other,
+				&mut recorder,
+				false,
+			);
 		let min_distance_squared = recorder.get().min(search_length * search_length);
 		return min_distance_squared.sqrt();
 	}

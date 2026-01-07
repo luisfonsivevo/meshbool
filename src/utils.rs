@@ -3,7 +3,7 @@ use crate::parallel::gather;
 use crate::vec::vec_uninit;
 use nalgebra::{Matrix3, Matrix3x4, Matrix4, Point2};
 use std::mem;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 
 pub const K_PRECISION: f64 = 1e-12;
 
@@ -46,8 +46,8 @@ pub const fn prev3_i32(i: i32) -> i32 {
 
 pub fn permute<IO, Map>(in_out: &mut Vec<IO>, new2old: &[Map])
 where
-	IO: Copy,
-	Map: Copy + LossyInto<usize>,
+	IO: Copy + Send + Sync,
+	Map: Copy + LossyInto<usize> + Send + Sync,
 {
 	let mut tmp = unsafe { vec_uninit(new2old.len()) };
 	mem::swap(&mut tmp, in_out);
@@ -57,6 +57,17 @@ where
 pub unsafe fn atomic_add_i32(target: &mut i32, add: i32) -> i32 {
 	let atomic_ref: &AtomicI32 = unsafe { std::mem::transmute(target) };
 	atomic_ref.fetch_add(add, Ordering::SeqCst)
+}
+
+pub unsafe fn atomic_add_f64(target: &mut f64, add: f64) -> f64 {
+	let atomic_ref: &AtomicU64 = unsafe { std::mem::transmute(target) };
+	atomic_ref
+		.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |old| {
+			let old = f64::from_bits(old);
+			Some((old + add).to_bits())
+		})
+		.map(|v| f64::from_bits(v))
+		.unwrap()
 }
 
 ///Determines if the three points are wound counter-clockwise, clockwise, or

@@ -37,6 +37,11 @@ impl AABB {
 		self.max - self.min
 	}
 
+	///Returns the center point of the Box.
+	pub fn center(&self) -> Vector3<f64> {
+		0.5 * (self.max.coords + self.min.coords)
+	}
+
 	///Returns the absolute-largest coordinate value of any contained
 	///point.
 	pub fn scale(&self) -> f64 {
@@ -211,6 +216,28 @@ where
 	}
 }
 
+pub trait FloatKind {
+	fn is_f64() -> bool;
+	fn is_f32() -> bool;
+}
+
+impl FloatKind for f64 {
+	fn is_f64() -> bool {
+		true
+	}
+	fn is_f32() -> bool {
+		false
+	}
+}
+impl FloatKind for f32 {
+	fn is_f64() -> bool {
+		false
+	}
+	fn is_f32() -> bool {
+		true
+	}
+}
+
 //lossy_from!([from, from, from], to)
 macro_rules! lossy_from {
 	([ $( $f:ty ),* ], $t:ty) => {
@@ -225,6 +252,8 @@ macro_rules! lossy_from {
 }
 
 lossy_from!([i32, u32, u64, usize], usize);
+lossy_from!([u32, u64], i32);
+lossy_from!([u32, u64], u32);
 lossy_from!([usize], u64);
 lossy_from!([usize], u32);
 lossy_from!([f64], f64);

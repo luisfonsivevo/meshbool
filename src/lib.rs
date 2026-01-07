@@ -1,9 +1,9 @@
 use crate::boolean3::Boolean3;
-use crate::common::{LossyFrom, Polygons};
+use crate::common::{FloatKind, LossyFrom, Polygons};
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
-use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Neg, Sub, SubAssign};
 
 pub use crate::common::AABB;
 pub use crate::common::OpType;
@@ -31,6 +31,166 @@ mod tri_dis;
 mod utils;
 mod vec;
 
+#[cfg(feature = "zngur")]
+mod generated {
+	include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+
+	trait PointGetterXY {
+		type T;
+		fn get_x(&self) -> Self::T;
+		fn get_y(&self) -> Self::T;
+	}
+
+	impl PointGetterXY for ::nalgebra::Point2<f64> {
+		type T = f64;
+
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+	}
+
+	trait PointGetter {
+		type T;
+		fn get_x(&self) -> Self::T;
+		fn get_y(&self) -> Self::T;
+		fn get_z(&self) -> Self::T;
+	}
+
+	impl PointGetter for ::nalgebra::Point3<f64> {
+		type T = f64;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	trait PointGetterW: PointGetter {
+		fn get_w(&self) -> Self::T;
+	}
+
+	impl PointGetter for ::nalgebra::Vector4<f64> {
+		type T = f64;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	impl PointGetterW for ::nalgebra::Vector4<f64> {
+		fn get_w(&self) -> Self::T {
+			self.w
+		}
+	}
+
+	impl PointGetter for ::nalgebra::Vector3<i32> {
+		type T = i32;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	impl PointGetter for ::nalgebra::Vector4<i32> {
+		type T = i32;
+		fn get_x(&self) -> Self::T {
+			self.x
+		}
+		fn get_y(&self) -> Self::T {
+			self.y
+		}
+		fn get_z(&self) -> Self::T {
+			self.z
+		}
+	}
+
+	impl PointGetterW for ::nalgebra::Vector4<i32> {
+		fn get_w(&self) -> Self::T {
+			self.w
+		}
+	}
+
+	trait ManifoldErrorExport {
+		fn is_no_error(&self) -> bool;
+		fn is_non_finite_vertex(&self) -> bool;
+		fn is_invalid_construction(&self) -> bool;
+		fn is_result_too_large(&self) -> bool;
+		fn is_not_manifold(&self) -> bool;
+		fn is_missing_position_properties(&self) -> bool;
+		fn is_merge_vectors_different_lengths(&self) -> bool;
+		fn is_transform_wrong_length(&self) -> bool;
+		fn is_run_index_wrong_length(&self) -> bool;
+		fn is_face_id_wrong_length(&self) -> bool;
+		fn is_merge_index_out_of_bounds(&self) -> bool;
+		fn is_vertex_out_of_bounds(&self) -> bool;
+	}
+
+	impl ManifoldErrorExport for super::ManifoldError {
+		fn is_no_error(&self) -> bool {
+			*self == Self::NoError
+		}
+		fn is_non_finite_vertex(&self) -> bool {
+			*self == Self::NonFiniteVertex
+		}
+		fn is_invalid_construction(&self) -> bool {
+			*self == Self::InvalidConstruction
+		}
+		fn is_result_too_large(&self) -> bool {
+			*self == Self::ResultTooLarge
+		}
+		fn is_not_manifold(&self) -> bool {
+			*self == Self::NotManifold
+		}
+		fn is_missing_position_properties(&self) -> bool {
+			*self == Self::MissingPositionProperties
+		}
+		fn is_merge_vectors_different_lengths(&self) -> bool {
+			*self == Self::MergeVectorsDifferentLengths
+		}
+		fn is_transform_wrong_length(&self) -> bool {
+			*self == Self::TransformWrongLength
+		}
+		fn is_run_index_wrong_length(&self) -> bool {
+			*self == Self::RunIndexWrongLength
+		}
+		fn is_face_id_wrong_length(&self) -> bool {
+			*self == Self::FaceIDWrongLength
+		}
+		fn is_merge_index_out_of_bounds(&self) -> bool {
+			*self == Self::MergeIndexOutOfBounds
+		}
+		fn is_vertex_out_of_bounds(&self) -> bool {
+			*self == Self::VertexOutOfBounds
+		}
+	}
+
+	impl crate::MeshBool {
+		pub fn from_meshgl_32(mesh_gl: &crate::MeshGL32) -> Self {
+			Self::from_meshgl(mesh_gl)
+		}
+		pub fn from_meshgl_64(mesh_gl: &crate::MeshGL64) -> Self {
+			Self::from_meshgl(mesh_gl)
+		}
+	}
+}
+
 #[test]
 fn test() {
 	use nalgebra::Vector3;
@@ -47,6 +207,19 @@ fn test() {
 
 	let intersection = &cube1 ^ &cube2;
 	println!("{:?}", intersection.get_mesh_gl_32(0));
+}
+
+fn halfspace(b_box: AABB, mut normal: Vector3<f64>, origin_offset: f64) -> MeshBool {
+	normal.normalize_mut();
+	let mut cutter =
+		MeshBool::cube(Vector3::repeat(2.0), true).translate(Vector3::new(1.0, 0.0, 0.0));
+	let size: f64 = (b_box.center() - normal * origin_offset).norm() + 0.5 * b_box.size().norm();
+	cutter = cutter
+		.scale(Vector3::repeat(size))
+		.translate(Vector3::new(origin_offset, 0.0, 0.0));
+	let y_deg: f64 = normal.z.asin().neg().to_degrees();
+	let z_deg: f64 = normal.y.atan2(normal.x).to_degrees();
+	return cutter.rotate(0.0, y_deg, z_deg);
 }
 
 ///@brief Mesh input/output suitable for pushing directly into graphics
@@ -474,6 +647,26 @@ impl MeshBool {
 		return Self::from(meshbool_impl);
 	}
 
+	///Curvature is the inverse of the radius of curvature, and signed such that
+	///positive is convex and negative is concave. There are two orthogonal
+	///principal curvatures at any point on a manifold, with one maximum and the
+	///other minimum. Gaussian curvature is their product, while mean
+	///curvature is their sum. This approximates them for every vertex and assigns
+	///them as vertex properties on the given channels.
+	///
+	///@param gaussian_idx The property channel index in which to store the Gaussian
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	///
+	///@param mean_idx The property channel index in which to store the mean
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	pub fn calculate_curvature(&self, gaussian_idx: i32, mean_idx: i32) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		meshbool_impl.calculate_curvature(gaussian_idx, mean_idx);
+		Self::from(meshbool_impl)
+	}
+
 	///Fills in vertex properties for normal vectors, calculated from the mesh
 	///geometry. Flat faces composed of three or more triangles will remain flat.
 	///
@@ -493,6 +686,72 @@ impl MeshBool {
 		return Self::from(meshbool_impl);
 	}
 
+	///Increase the density of the mesh by splitting every edge into n pieces. For
+	///instance, with n = 2, each triangle will be split into 4 triangles. Quads
+	///will ignore their interior triangle bisector. These will all be coplanar (and
+	///will not be immediately collapsed) unless the Mesh/Manifold has
+	///halfedgeTangents specified (e.g. from the Smooth() constructor), in which
+	///case the new vertices will be moved to the interpolated surface according to
+	///their barycentric coordinates.
+	///
+	///@param n The number of pieces to split every edge into. Must be > 1.
+	pub fn refine(&self, n: i32) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		if n > 1 {
+			meshbool_impl.refine(|_, _, _| n - 1, false);
+		}
+		Self::from(meshbool_impl)
+	}
+
+	///Increase the density of the mesh by splitting each edge into pieces of
+	///roughly the input length. Interior verts are added to keep the rest of the
+	///triangulation edges also of roughly the same length. If halfedgeTangents are
+	///present (e.g. from the Smooth() constructor), the new vertices will be moved
+	///to the interpolated surface according to their barycentric coordinates. Quads
+	///will ignore their interior triangle bisector.
+	///
+	///@param length The length that edges will be broken down to.
+	pub fn refine_to_length(&self, mut length: f64) -> Self {
+		length = length.abs();
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		meshbool_impl.refine(|edge, _, _| (edge.norm() / length) as i32, false);
+		Self::from(meshbool_impl)
+	}
+
+	///Increase the density of the mesh by splitting each edge into pieces such that
+	///any point on the resulting triangles is roughly within tolerance of the
+	///smoothly curved surface defined by the tangent vectors. This means tightly
+	///curving regions will be divided more finely than smoother regions. If
+	///halfedgeTangents are not present, the result will simply be a copy of the
+	///original. Quads will ignore their interior triangle bisector.
+	///
+	///@param tolerance The desired maximum distance between the faceted mesh
+	///produced and the exact smoothly curving surface. All vertices are exactly on
+	///the surface, within rounding error.
+	pub fn refine_to_tolerance(&self, mut tolerance: f64) -> Self {
+		tolerance = tolerance.abs();
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		// if !pImpl.halfedge_tangent.empty() {
+		if false {
+			meshbool_impl.refine(
+				|edge, tangent_start, tangent_end| {
+					let edge_norm: Vector3<f64> = edge.normalize();
+					// Weight heuristic
+					let t_start: Vector3<f64> = tangent_start.xyz();
+					let t_end: Vector3<f64> = tangent_end.xyz();
+					// Perpendicular to edge
+					let start: Vector3<f64> = t_start - edge_norm * edge_norm.dot(&t_start);
+					let end: Vector3<f64> = t_end - edge_norm * edge_norm.dot(&t_end);
+					// Circular arc result plus heuristic term for non-circular curves
+					let d: f64 = 0.5 * (start.norm() + end.norm()) + (start - end).norm();
+					(3.0 * d / (4.0 * tolerance)).sqrt() as i32
+				},
+				true,
+			);
+		}
+		Self::from(meshbool_impl)
+	}
+
 	///	The central operation of this library: the Boolean combines two manifolds
 	///	into another by calculating their intersections and removing the unused
 	///	portions.
@@ -509,9 +768,54 @@ impl MeshBool {
 		Self::from(Boolean3::new(&self.meshbool_impl, &other.meshbool_impl, op).result(op))
 	}
 
+	///Split cuts this manifold in two using the cutter manifold. The first result
+	///is the intersection, second is the difference. This is more efficient than
+	///doing them separately.
+	///
+	///@param cutter
+	pub fn split(&self, cutter: &Self) -> (Self, Self) {
+		let impl1 = &self.meshbool_impl;
+		let impl2 = &cutter.meshbool_impl;
+
+		let boolean = Boolean3::new(impl1, impl2, OpType::Subtract);
+		let result1 = boolean.result(OpType::Intersect);
+		let result2 = boolean.result(OpType::Subtract);
+		(Self::from(result1), Self::from(result2))
+	}
+
+	///Convenient version of Split() for a half-space.
+	///
+	///@param normal This vector is normal to the cutting plane and its length does
+	///not matter. The first result is in the direction of this vector, the second
+	///result is on the opposite side.
+	///@param originOffset The distance of the plane from the origin in the
+	///direction of the normal vector.
+	pub fn split_by_plane(&self, normal: Vector3<f64>, origin_offset: f64) -> (Self, Self) {
+		self.split(&halfspace(self.bounding_box(), normal, origin_offset))
+	}
+
+	///Identical to SplitByPlane(), but calculating and returning only the first
+	///result.
+	///
+	///@param normal This vector is normal to the cutting plane and its length does
+	///not matter. The result is in the direction of this vector from the plane.
+	///@param originOffset The distance of the plane from the origin in the
+	///direction of the normal vector.
+	pub fn trim_by_plane(&self, normal: Vector3<f64>, origin_offset: f64) -> Self {
+		self ^ &halfspace(self.bounding_box(), normal, origin_offset)
+	}
+
+	///Returns the cross section of this object parallel to the X-Y plane at the
+	///specified Z height, defaulting to zero. Using a height equal to the bottom of
+	///the bounding box will return the bottom faces, while using a height equal to
+	///the top of the bounding box will return empty.
+	pub fn slice(&self, height: f64) -> Polygons {
+		self.meshbool_impl.slice(height)
+	}
+
 	fn get_mesh_gl_impl<F, I>(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGLP<F, I>
 	where
-		F: LossyFrom<f64> + Copy,
+		F: LossyFrom<f64> + Copy + FloatKind,
 		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
@@ -524,9 +828,12 @@ impl MeshBool {
 		let update_normals = !is_original && normal_idx >= 0;
 
 		let out_num_prop = 3 + num_prop;
-		let tolerance = meshbool_impl
+		let mut tolerance = meshbool_impl
 			.tolerance
 			.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale());
+		if F::is_f32() {
+			tolerance = tolerance.max(core::f64::EPSILON * meshbool_impl.bbox.scale());
+		}
 
 		let mut tri_verts: Vec<I> = vec![I::lossy_from(0); 3 * num_tri];
 
@@ -736,7 +1043,7 @@ impl MeshBool {
 
 	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
 	where
-		F: LossyFrom<f64> + Copy,
+		F: LossyFrom<f64> + Copy + FloatKind,
 		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
