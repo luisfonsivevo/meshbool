@@ -1,11 +1,14 @@
+use crate::AABB;
+use crate::collider::SimpleRecorder;
 use crate::common::{Polygons, SimplePolygon};
 use crate::meshboolimpl::MeshBoolImpl;
 use crate::parallel::copy_if;
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use crate::shared::{Halfedge, TriRef, get_axis_aligned_projection};
-use crate::utils::ccw;
+use crate::utils::{ccw, next3_i32, next3_usize};
 use crate::vec::InsertSorted;
 use nalgebra::{Matrix2x3, Matrix3x2, Point3, Vector3};
+use std::collections::HashSet;
 use std::mem;
 use std::ops::DerefMut;
 
@@ -220,6 +223,79 @@ impl MeshBoolImpl {
 				add_tri(face, tri, normal, halfedge_ref[first_edge]);
 			}
 		}
+	}
+
+	pub fn slice(&self, height: f64) -> Polygons {
+		let mut plane: AABB = self.bbox;
+		plane.min.z = height;
+		plane.max.z = height;
+		let mut query: Vec<AABB> = vec![];
+		query.push(plane);
+
+		let mut tris = HashSet::<i32>::new();
+		let mut record_collision = |_, tri: i32| {
+			let mut min: f64 = core::f64::INFINITY;
+			let mut max: f64 = core::f64::NEG_INFINITY;
+			for j in [0, 1, 2] {
+				let z: f64 =
+					self.vert_pos[self.halfedge[3 * tri as usize + j].start_vert as usize].z;
+				min = min.min(z);
+				max = max.max(z);
+			}
+
+			if min <= height && max > height {
+				tris.insert(tri);
+			}
+		};
+
+		let mut recorder = SimpleRecorder::new(&mut record_collision);
+		self.collider
+			.collisions_from_slice::<false, _, SimpleRecorder<'_>>(&query, &mut recorder, false);
+
+		let mut polys = Polygons::default();
+		while !tris.is_empty() {
+			let start_tri: i32 = *tris.iter().next().unwrap();
+			let mut poly = SimplePolygon::default();
+
+			let mut k: i32 = 0;
+			for j in [0, 1, 2] {
+				if self.vert_pos[self.halfedge[3 * start_tri as usize + j].start_vert as usize].z
+					> height && self.vert_pos
+					[self.halfedge[3 * start_tri as usize + next3_usize(j)].start_vert as usize]
+					.z <= height
+				{
+					k = next3_i32(j as i32);
+					break;
+				}
+			}
+
+			let mut tri: i32 = start_tri;
+			loop {
+				tris.remove(&tri);
+				if self.vert_pos[self.halfedge[3 * tri as usize + k as usize].end_vert as usize].z
+					<= height
+				{
+					k = next3_i32(k);
+				}
+
+				let up: Halfedge = self.halfedge[(3 * tri + k) as usize];
+				let below: Vector3<f64> = self.vert_pos[up.start_vert as usize].coords;
+				let above: Vector3<f64> = self.vert_pos[up.end_vert as usize].coords;
+				let a: f64 = (height - below.z) / (above.z - below.z);
+				poly.push(below.lerp(&above, a).xy().into());
+
+				let pair: i32 = up.paired_halfedge;
+				tri = pair / 3;
+				k = next3_i32(pair % 3);
+				if tri == start_tri {
+					break;
+				}
+			}
+
+			polys.push(poly);
+		}
+
+		return polys;
 	}
 
 	pub fn project(&self) -> Polygons {

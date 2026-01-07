@@ -3,7 +3,7 @@ use crate::common::{LossyFrom, Polygons};
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
-use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Neg, Sub, SubAssign};
 
 pub use crate::common::AABB;
 pub use crate::common::OpType;
@@ -47,6 +47,19 @@ fn test() {
 
 	let intersection = &cube1 ^ &cube2;
 	println!("{:?}", intersection.get_mesh_gl_32(0));
+}
+
+fn halfspace(b_box: AABB, mut normal: Vector3<f64>, origin_offset: f64) -> MeshBool {
+	normal.normalize_mut();
+	let mut cutter =
+		MeshBool::cube(Vector3::repeat(2.0), true).translate(Vector3::new(1.0, 0.0, 0.0));
+	let size: f64 = (b_box.center() - normal * origin_offset).norm() + 0.5 * b_box.size().norm();
+	cutter = cutter
+		.scale(Vector3::repeat(size))
+		.translate(Vector3::new(origin_offset, 0.0, 0.0));
+	let y_deg: f64 = normal.z.asin().neg().to_degrees();
+	let z_deg: f64 = normal.y.atan2(normal.x).to_degrees();
+	return cutter.rotate(0.0, y_deg, z_deg);
 }
 
 ///@brief Mesh input/output suitable for pushing directly into graphics
@@ -474,6 +487,26 @@ impl MeshBool {
 		return Self::from(meshbool_impl);
 	}
 
+	///Curvature is the inverse of the radius of curvature, and signed such that
+	///positive is convex and negative is concave. There are two orthogonal
+	///principal curvatures at any point on a manifold, with one maximum and the
+	///other minimum. Gaussian curvature is their product, while mean
+	///curvature is their sum. This approximates them for every vertex and assigns
+	///them as vertex properties on the given channels.
+	///
+	///@param gaussian_idx The property channel index in which to store the Gaussian
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	///
+	///@param mean_idx The property channel index in which to store the mean
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	pub fn calculate_curvature(&self, gaussian_idx: i32, mean_idx: i32) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		meshbool_impl.calculate_curvature(gaussian_idx, mean_idx);
+		Self::from(meshbool_impl)
+	}
+
 	///Fills in vertex properties for normal vectors, calculated from the mesh
 	///geometry. Flat faces composed of three or more triangles will remain flat.
 	///
@@ -507,6 +540,51 @@ impl MeshBool {
 	///	@param op The type of operation to perform.
 	pub fn boolean(&self, other: &Self, op: OpType) -> Self {
 		Self::from(Boolean3::new(&self.meshbool_impl, &other.meshbool_impl, op).result(op))
+	}
+
+	///Split cuts this manifold in two using the cutter manifold. The first result
+	///is the intersection, second is the difference. This is more efficient than
+	///doing them separately.
+	///
+	///@param cutter
+	pub fn split(&self, cutter: &Self) -> (Self, Self) {
+		let impl1 = &self.meshbool_impl;
+		let impl2 = &cutter.meshbool_impl;
+
+		let boolean = Boolean3::new(impl1, impl2, OpType::Subtract);
+		let result1 = boolean.result(OpType::Intersect);
+		let result2 = boolean.result(OpType::Subtract);
+		(Self::from(result1), Self::from(result2))
+	}
+
+	///Convenient version of Split() for a half-space.
+	///
+	///@param normal This vector is normal to the cutting plane and its length does
+	///not matter. The first result is in the direction of this vector, the second
+	///result is on the opposite side.
+	///@param originOffset The distance of the plane from the origin in the
+	///direction of the normal vector.
+	pub fn split_by_plane(&self, normal: Vector3<f64>, origin_offset: f64) -> (Self, Self) {
+		self.split(&halfspace(self.bounding_box(), normal, origin_offset))
+	}
+
+	///Identical to SplitByPlane(), but calculating and returning only the first
+	///result.
+	///
+	///@param normal This vector is normal to the cutting plane and its length does
+	///not matter. The result is in the direction of this vector from the plane.
+	///@param originOffset The distance of the plane from the origin in the
+	///direction of the normal vector.
+	pub fn trim_by_plane(&self, normal: Vector3<f64>, origin_offset: f64) -> Self {
+		self ^ &halfspace(self.bounding_box(), normal, origin_offset)
+	}
+
+	///Returns the cross section of this object parallel to the X-Y plane at the
+	///specified Z height, defaulting to zero. Using a height equal to the bottom of
+	///the bounding box will return the bottom faces, while using a height equal to
+	///the top of the bounding box will return empty.
+	pub fn slice(&self, height: f64) -> Polygons {
+		self.meshbool_impl.slice(height)
 	}
 
 	fn get_mesh_gl_impl<F, I>(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGLP<F, I>

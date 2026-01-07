@@ -37,6 +37,11 @@ impl AABB {
 		self.max - self.min
 	}
 
+	///Returns the center point of the Box.
+	pub fn center(&self) -> Vector3<f64> {
+		0.5 * (self.max.coords + self.min.coords)
+	}
+
 	///Returns the absolute-largest coordinate value of any contained
 	///point.
 	pub fn scale(&self) -> f64 {
@@ -225,6 +230,8 @@ macro_rules! lossy_from {
 }
 
 lossy_from!([i32, u32, u64, usize], usize);
+lossy_from!([u32, u64], i32);
+lossy_from!([u32, u64], u32);
 lossy_from!([usize], u64);
 lossy_from!([usize], u32);
 lossy_from!([f64], f64);
