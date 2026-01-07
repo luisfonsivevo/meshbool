@@ -834,7 +834,7 @@ fn reorder_halfedges(halfedges: &mut [Halfedge]) {
 }
 
 impl<'a> Boolean3<'a> {
-	pub fn result(self, op: OpType) -> MeshBoolImpl {
+	pub fn result(&self, op: OpType) -> MeshBoolImpl {
 		let c1 = if op == OpType::Intersect { 0 } else { 1 };
 		let c2 = if op == OpType::Add { 1 } else { 0 };
 		let c3 = if op == OpType::Intersect { 1 } else { -1 };
@@ -874,10 +874,10 @@ impl<'a> Boolean3<'a> {
 		let invert_q = op == OpType::Subtract;
 
 		// Convert winding numbers to inclusion values based on operation type.
-		let i12: Vec<_> = self.x12.into_iter().map(|v| c3 * v).collect();
-		let i21: Vec<_> = self.x21.into_iter().map(|v| c3 * v).collect();
-		let i03: Vec<_> = self.w03.into_iter().map(|v| c1 + c3 * v).collect();
-		let i30: Vec<_> = self.w30.into_iter().map(|v| c2 + c3 * v).collect();
+		let i12: Vec<_> = self.x12.iter().copied().map(|v| c3 * v).collect();
+		let i21: Vec<_> = self.x21.iter().copied().map(|v| c3 * v).collect();
+		let i03: Vec<_> = self.w03.iter().copied().map(|v| c1 + c3 * v).collect();
+		let i30: Vec<_> = self.w30.iter().copied().map(|v| c2 + c3 * v).collect();
 
 		let v_p2r = exclusive_scan_transformed(&i03, 0, &abs_sum);
 		let mut num_vert_r = v_p2r.last().unwrap().abs() + i03.last().unwrap().abs();

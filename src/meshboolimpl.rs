@@ -1,18 +1,30 @@
 use crate::collider::Collider;
-use crate::common::AABB;
+use crate::common::{AABB, LossyFrom};
 use crate::disjoint_sets::DisjointSets;
 use crate::mesh_fixes::{FlipTris, transform_normal};
 use crate::parallel::exclusive_scan_in_place;
 use crate::shared::{Halfedge, TriRef, max_epsilon, next_halfedge, normal_transform};
 use crate::utils::{K_PRECISION, atomic_add_i32, mat3, mat4, next3_i32, next3_usize};
 use crate::vec::{vec_resize, vec_resize_nofill, vec_uninit};
-use crate::{ManifoldError, MeshGL, OpType};
+use crate::{ManifoldError, MeshGLP, OpType};
 use nalgebra::{Matrix3x4, Point3, Vector3, Vector4};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeMap, HashMap};
-use std::f64;
-use std::mem;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering as AtomicOrdering};
+use std::{array, f64, mem};
+
+#[derive(Clone)]
+pub struct BaryIndices {
+	pub tri: i32,
+	pub start4: i32,
+	pub end4: i32,
+}
+
+impl BaryIndices {
+	pub fn new(tri: i32, start4: i32, end4: i32) -> Self {
+		Self { tri, start4, end4 }
+	}
+}
 
 #[derive(Copy, Clone)]
 #[allow(unused)]
@@ -173,7 +185,13 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 }
 
 impl MeshBoolImpl {
-	pub fn from_meshgl(mesh_gl: &MeshGL) -> Self {
+	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
+	where
+		F: LossyFrom<f64> + Copy,
+		f64: From<F>,
+		I: LossyFrom<usize> + Copy,
+		usize: LossyFrom<I>,
+	{
 		let num_vert = mesh_gl.num_vert();
 		let num_tri = mesh_gl.num_tri();
 
@@ -189,7 +207,7 @@ impl MeshBoolImpl {
 			return manifold;
 		}
 
-		if mesh_gl.num_prop < 3 {
+		if usize::lossy_from(mesh_gl.num_prop) < 3 {
 			manifold.make_empty(ManifoldError::MissingPositionProperties);
 			return manifold;
 		}
@@ -220,12 +238,20 @@ impl MeshBoolImpl {
 			return manifold;
 		}
 
-		if mesh_gl.vert_properties.iter().any(|v| !v.is_finite()) {
+		if mesh_gl
+			.vert_properties
+			.iter()
+			.any(|v| !f64::from(*v).is_finite())
+		{
 			manifold.make_empty(ManifoldError::NonFiniteVertex);
 			return manifold;
 		}
 
-		if mesh_gl.run_transform.iter().any(|x| !x.is_finite()) {
+		if mesh_gl
+			.run_transform
+			.iter()
+			.any(|x| !f64::from(*x).is_finite())
+		{
 			manifold.make_empty(ManifoldError::InvalidConstruction);
 			return manifold;
 		}
@@ -241,27 +267,22 @@ impl MeshBoolImpl {
 		if !mesh_gl.merge_from_vert.is_empty() {
 			prop2vert = (0..num_vert as i32).collect();
 			for i in 0..mesh_gl.merge_from_vert.len() {
-				let from = mesh_gl.merge_from_vert[i];
-				let to = mesh_gl.merge_to_vert[i];
-				if from as usize >= num_vert || to as usize >= num_vert {
+				let from = usize::lossy_from(mesh_gl.merge_from_vert[i]);
+				let to = usize::lossy_from(mesh_gl.merge_to_vert[i]);
+				if from >= num_vert || to >= num_vert {
 					manifold.make_empty(ManifoldError::MergeIndexOutOfBounds);
 					return manifold;
 				}
-				prop2vert[from as usize] = to as i32;
+				prop2vert[from] = to as i32;
 			}
 		} else {
 			prop2vert = vec![];
 		}
 
-		let num_prop = mesh_gl.num_prop - 3;
+		let num_prop = usize::lossy_from(mesh_gl.num_prop) - 3;
 		manifold.num_prop = num_prop as i32;
-		unsafe {
-			vec_resize_nofill(
-				&mut manifold.properties,
-				mesh_gl.num_vert() * num_prop as usize,
-			)
-		};
-		manifold.tolerance = mesh_gl.tolerance.into();
+		unsafe { vec_resize_nofill(&mut manifold.properties, mesh_gl.num_vert() * num_prop) };
+		manifold.tolerance = f64::from(mesh_gl.tolerance);
 		// This will have unreferenced duplicate positions that will be removed by
 		// Impl::remove_unreferenced_verts().
 		unsafe { vec_resize_nofill(&mut manifold.vert_pos, mesh_gl.num_vert()) };
@@ -269,11 +290,12 @@ impl MeshBoolImpl {
 		for i in 0..mesh_gl.num_vert() {
 			for j in [0, 1, 2] {
 				manifold.vert_pos[i][j] =
-					mesh_gl.vert_properties[mesh_gl.num_prop as usize * i + j].into();
+					mesh_gl.vert_properties[usize::lossy_from(mesh_gl.num_prop) * i + j].into();
 			}
 			for j in 0..num_prop {
-				manifold.properties[i * num_prop as usize + j as usize] =
-					mesh_gl.vert_properties[mesh_gl.num_prop as usize * i + 3 + j as usize].into();
+				manifold.properties[i * num_prop as usize + j as usize] = mesh_gl.vert_properties
+					[usize::lossy_from(mesh_gl.num_prop) * i + 3 + j as usize]
+					.into();
 			}
 		}
 
@@ -286,14 +308,18 @@ impl MeshBoolImpl {
 
 		let mut tri_ref: Vec<TriRef> = unsafe { vec_uninit(mesh_gl.num_tri()) };
 
-		let mut run_index = mesh_gl.run_index.clone();
+		let mut run_index: Vec<usize> = mesh_gl
+			.run_index
+			.iter()
+			.map(|x| usize::lossy_from(*x))
+			.collect();
 		let run_end = mesh_gl.tri_verts.len();
 		if run_index.is_empty() {
-			run_index = vec![0, run_end as u32];
+			run_index = vec![0, run_end];
 		} else if run_index.len() == mesh_gl.run_original_id.len() {
-			run_index.push(run_end as u32);
+			run_index.push(run_end);
 		} else if run_index.len() == 1 {
-			run_index.push(run_end as u32);
+			run_index.push(run_end);
 		}
 
 		let start_id = MeshBoolImpl::reserve_ids(1.max(mesh_gl.run_original_id.len()));
@@ -303,15 +329,15 @@ impl MeshBoolImpl {
 		}
 		for i in 0..run_original_id.len() {
 			let mesh_id = start_id + i;
-			let original_id = run_original_id[i];
+			let original_id = run_original_id[i] as i32;
 			for tri in (run_index[i] / 3)..(run_index[i + 1] / 3) {
 				let r = &mut tri_ref[tri as usize];
 				r.mesh_id = mesh_id as i32;
-				r.original_id = original_id as i32;
+				r.original_id = original_id;
 				r.face_id = if mesh_gl.face_id.is_empty() {
 					-1
 				} else {
-					mesh_gl.face_id[tri as usize] as i32
+					usize::lossy_from(mesh_gl.face_id[tri]) as i32
 				};
 				r.coplanar_id = tri as i32;
 			}
@@ -320,21 +346,21 @@ impl MeshBoolImpl {
 				manifold.mesh_relation.mesh_id_transform.insert(
 					mesh_id as i32,
 					Relation {
-						original_id: original_id as i32,
+						original_id: original_id,
 						..Relation::default() //in c++ the rest were uninitialized
 					},
 				);
 			} else {
-				let m = &mesh_gl.run_transform[12 * i..];
+				let m: [_; 12] = array::from_fn(|j| f64::from(mesh_gl.run_transform[i * 12 + j]));
 				manifold.mesh_relation.mesh_id_transform.insert(
 					mesh_id as i32,
 					Relation {
-						original_id: original_id as i32,
+						original_id: original_id,
 						transform: [
-							[m[0] as f64, m[1] as f64, m[2] as f64],
-							[m[3] as f64, m[4] as f64, m[5] as f64],
-							[m[6] as f64, m[7] as f64, m[8] as f64],
-							[m[9] as f64, m[10] as f64, m[11] as f64],
+							[m[0], m[1], m[2]],
+							[m[3], m[4], m[5]],
+							[m[6], m[7], m[8]],
+							[m[9], m[10], m[11]],
 						]
 						.into(),
 						..Relation::default()
@@ -356,8 +382,8 @@ impl MeshBoolImpl {
 			let mut tri_p: Vector3<i32> = Vector3::default();
 			let mut tri_v: Vector3<i32> = Vector3::default();
 			for j in [0, 1, 2] {
-				let vert = mesh_gl.tri_verts[3 * i + j];
-				if vert as usize >= num_vert {
+				let vert = usize::lossy_from(mesh_gl.tri_verts[3 * i + j]);
+				if vert >= num_vert {
 					manifold.make_empty(ManifoldError::VertexOutOfBounds);
 					return manifold;
 				}
@@ -501,7 +527,7 @@ impl MeshBoolImpl {
 		for h in &self.halfedge {
 			if h.start_vert >= 0 {
 				let atomic_ref: &AtomicI32 =
-					unsafe { std::mem::transmute(&keep[h.start_vert as usize]) };
+					unsafe { mem::transmute(&keep[h.start_vert as usize]) };
 				atomic_ref.store(1, AtomicOrdering::Relaxed);
 			}
 		}
@@ -747,7 +773,7 @@ impl MeshBoolImpl {
 						ids[i as usize] = i;
 					}
 
-					ids.sort_unstable_by_key(|&i| {
+					ids[start as usize..end as usize].sort_unstable_by_key(|&i| {
 						let entry = &entries[i as usize];
 						(entry.large_vert, entry.tri)
 					});
@@ -852,6 +878,27 @@ impl MeshBoolImpl {
 		self.face_normal = Vec::default();
 		self.mesh_relation = MeshRelationD::default();
 		self.status = status;
+	}
+
+	pub fn warp(&mut self, warp_func: impl Fn(&mut Point3<f64>)) {
+		self.warp_batch(|vecs| {
+			vecs.iter_mut().for_each(|v| warp_func(v));
+		});
+	}
+
+	pub fn warp_batch(&mut self, warp_func: impl Fn(&mut [Point3<f64>])) {
+		warp_func(&mut self.vert_pos);
+		self.calculate_bbox();
+		if !self.is_finite() {
+			self.make_empty(ManifoldError::NonFiniteVertex);
+			return;
+		}
+		self.update();
+		self.face_normal.clear(); // force recalculation of triNormal
+		self.set_epsilon(-1.0, false);
+		self.finish();
+		self.mark_coplanar();
+		self.mesh_relation.original_id = -1;
 	}
 
 	///Transform this Manifold in space. The first three columns form a 3x3 matrix
@@ -1148,6 +1195,27 @@ impl MeshBoolImpl {
 		loop {
 			current = next_halfedge(self.halfedge[current as usize].paired_halfedge);
 			func(self, current);
+			if current == halfedge {
+				break;
+			}
+		}
+	}
+
+	#[inline]
+	pub fn for_vert_fun<T>(
+		&self,
+		halfedge: i32,
+		mut transform: impl FnMut(i32) -> T,
+		mut binary_op: impl FnMut(i32, &T, &mut T),
+	) {
+		let mut here: T = transform(halfedge);
+		let mut current: i32 = halfedge;
+		loop {
+			let next_halfedge: i32 = next_halfedge(self.halfedge[current as usize].paired_halfedge);
+			let mut next: T = transform(next_halfedge);
+			binary_op(current, &here, &mut next);
+			here = next;
+			current = next_halfedge;
 			if current == halfedge {
 				break;
 			}

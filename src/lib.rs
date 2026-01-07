@@ -1,12 +1,13 @@
 use crate::boolean3::Boolean3;
-use crate::common::Polygons;
+use crate::common::{LossyFrom, Polygons};
 use crate::meshboolimpl::{MeshBoolImpl, Relation};
 use crate::shared::normal_transform;
 use nalgebra::{Matrix3, Matrix3x4, Point3, UnitQuaternion, Vector2, Vector3};
-use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, BitXor, BitXorAssign, Neg, Sub, SubAssign};
 
 pub use crate::common::AABB;
 pub use crate::common::OpType;
+pub use crate::polygon::triangulate;
 pub use crate::polygon::{PolyVert, triangulate_idx};
 
 mod boolean3;
@@ -23,7 +24,9 @@ mod parallel;
 mod polygon;
 mod properties;
 pub mod shared;
+mod smoothing;
 mod sort;
+mod subdivision;
 mod tree2d;
 mod tri_dis;
 mod utils;
@@ -38,13 +41,26 @@ fn test() {
 	let cube2 = MeshBool::cube(Vector3::new(1.0, 1.0, 1.0), false);
 
 	let union = &cube1 + &cube2;
-	println!("{:?}", union.get_mesh_gl(0));
+	println!("{:?}", union.get_mesh_gl_32(0));
 
 	let difference = &cube1 - &cube2;
-	println!("{:?}", difference.get_mesh_gl(0));
+	println!("{:?}", difference.get_mesh_gl_32(0));
 
 	let intersection = &cube1 ^ &cube2;
-	println!("{:?}", intersection.get_mesh_gl(0));
+	println!("{:?}", intersection.get_mesh_gl_32(0));
+}
+
+fn halfspace(b_box: AABB, mut normal: Vector3<f64>, origin_offset: f64) -> MeshBool {
+	normal.normalize_mut();
+	let mut cutter =
+		MeshBool::cube(Vector3::repeat(2.0), true).translate(Vector3::new(1.0, 0.0, 0.0));
+	let size: f64 = (b_box.center() - normal * origin_offset).norm() + 0.5 * b_box.size().norm();
+	cutter = cutter
+		.scale(Vector3::repeat(size))
+		.translate(Vector3::new(origin_offset, 0.0, 0.0));
+	let y_deg: f64 = normal.z.asin().neg().to_degrees();
+	let z_deg: f64 = normal.y.atan2(normal.x).to_degrees();
+	return cutter.rotate(0.0, y_deg, z_deg);
 }
 
 ///@brief Mesh input/output suitable for pushing directly into graphics
@@ -116,23 +132,27 @@ fn test() {
 ///MeshGL is an alias for the standard single-precision version. Use MeshGL64 to
 ///output the full double precision that Manifold uses internally.
 #[derive(Debug, Clone)]
-pub struct MeshGL {
+pub struct MeshGLP<F, I>
+where
+	F: LossyFrom<f64>,
+	I: LossyFrom<usize>,
+{
 	/// Number of properties per vertex, always >= 3.
-	pub num_prop: u32,
+	pub num_prop: I,
 	/// Flat, GL-style interleaved list of all vertex properties: propVal =
 	/// vertProperties[vert * numProp + propIdx]. The first three properties are
 	/// always the position x, y, z. The stride of the array is numProp.
-	pub vert_properties: Vec<f64>,
+	pub vert_properties: Vec<F>,
 	/// The vertex indices of the three triangle corners in CCW (from the outside)
 	/// order, for each triangle.
-	pub tri_verts: Vec<u32>,
+	pub tri_verts: Vec<I>,
 	/// Optional: A list of only the vertex indicies that need to be merged to
 	/// reconstruct the manifold.
-	pub merge_from_vert: Vec<u32>,
+	pub merge_from_vert: Vec<I>,
 	/// Optional: The same length as mergeFromVert, and the corresponding value
 	/// contains the vertex to merge with. It will have an identical position, but
 	/// the other properties may differ.
-	pub merge_to_vert: Vec<u32>,
+	pub merge_to_vert: Vec<I>,
 	/// Optional: Indicates runs of triangles that correspond to a particular
 	/// input mesh instance. The runs encompass all of triVerts and are sorted
 	/// by runOriginalID. Run i begins at triVerts[runIndex[i]] and ends at
@@ -140,7 +160,7 @@ pub struct MeshGL {
 	/// runIndex will always be 1 longer than runOriginalID, but same length is
 	/// also allowed as input: triVerts.size() will be automatically appended in
 	/// this case.
-	pub run_index: Vec<u32>,
+	pub run_index: Vec<I>,
 	/// Optional: The OriginalID of the mesh this triangle run came from. This ID
 	/// is ideal for reapplying materials to the output mesh. Multiple runs may
 	/// have the same ID, e.g. representing different copies of the same input
@@ -151,25 +171,29 @@ pub struct MeshGL {
 	/// corresponding original mesh was transformed to create this triangle run.
 	/// This matrix is stored in column-major order and the length of the overall
 	/// vector is 12 * runOriginalID.size().
-	pub run_transform: Vec<f64>,
+	pub run_transform: Vec<F>,
 	/// Optional: Length NumTri, contains the source face ID this triangle comes
 	/// from. Simplification will maintain all edges between triangles with
 	/// different faceIDs. Input faceIDs will be maintained to the outputs, but if
 	/// none are given, they will be filled in with Manifold's coplanar face
 	/// calculation based on mesh tolerance.
-	pub face_id: Vec<u32>,
+	pub face_id: Vec<I>,
 	/// Tolerance for mesh simplification. When creating a Manifold, the tolerance
 	/// used will be the maximum of this and a baseline tolerance from the size of
 	/// the bounding box. Any edge shorter than tolerance may be collapsed.
 	/// Tolerance may be enlarged when floating point error accumulates.
-	pub tolerance: f64,
+	pub tolerance: F,
 }
 
-impl Default for MeshGL {
+impl<F, I> Default for MeshGLP<F, I>
+where
+	F: LossyFrom<f64>,
+	I: LossyFrom<usize>,
+{
 	fn default() -> Self {
 		Self {
-			num_prop: 3,
-			tolerance: 0.0,
+			num_prop: I::lossy_from(3),
+			tolerance: F::lossy_from(0.0),
 			vert_properties: Vec::default(),
 			tri_verts: Vec::default(),
 			merge_from_vert: Vec::default(),
@@ -182,15 +206,29 @@ impl Default for MeshGL {
 	}
 }
 
-impl MeshGL {
+impl<F, I> MeshGLP<F, I>
+where
+	F: LossyFrom<f64>,
+	I: LossyFrom<usize> + Copy,
+	usize: LossyFrom<I>,
+{
 	pub fn num_vert(&self) -> usize {
-		self.vert_properties.len() / self.num_prop as usize
+		self.vert_properties.len() / usize::lossy_from(self.num_prop)
 	}
+}
 
+impl<F, I> MeshGLP<F, I>
+where
+	F: LossyFrom<f64>,
+	I: LossyFrom<usize>,
+{
 	pub fn num_tri(&self) -> usize {
 		self.tri_verts.len() / 3
 	}
 }
+
+pub type MeshGL32 = MeshGLP<f32, u32>;
+pub type MeshGL64 = MeshGLP<f64, u64>;
 
 #[derive(Default, Debug, Clone)]
 pub struct MeshBool {
@@ -232,6 +270,18 @@ impl MeshBool {
 		return (1 - chi / 2) as usize;
 	}
 
+	///Returns the surface area of the manifold.
+	pub fn surface_area(&self) -> f64 {
+		self.meshbool_impl
+			.get_property(properties::Property::SurfaceArea)
+	}
+
+	///Returns the volume of the manifold.
+	pub fn volume(&self) -> f64 {
+		self.meshbool_impl
+			.get_property(properties::Property::Volume)
+	}
+
 	///If this mesh is an original, this returns its meshID that can be referenced
 	///by product manifolds' MeshRelation. If this manifold is a product, this
 	///returns -1.
@@ -264,6 +314,20 @@ impl MeshBool {
 	///MeshGL.runOriginalID vector.
 	pub fn reserve_ids(n: u32) -> u32 {
 		return MeshBoolImpl::reserve_ids(n as usize) as u32;
+	}
+
+	///The triangle normal vectors are saved over the course of operations rather
+	///than recalculated to avoid rounding error. This checks that triangles still
+	///match their normal vectors within Precision().
+	pub fn matches_tri_normals(&self) -> bool {
+		self.meshbool_impl.matches_tri_normals()
+	}
+
+	///The number of triangles that are colinear within Precision(). This library
+	///attempts to remove all of these, but it cannot always remove all of them
+	///without changing the mesh by too much.
+	pub fn num_degenerate_tris(&self) -> usize {
+		self.meshbool_impl.num_degenerate_tris()
 	}
 
 	///Move this Manifold in space. This operation can be chained. Transforms are
@@ -321,6 +385,63 @@ impl MeshBool {
 		Self::from(self.meshbool_impl.transform(&m))
 	}
 
+	///Mirror this Manifold over the plane described by the unit form of the given
+	///normal vector. If the length of the normal is zero, an empty Manifold is
+	///returned. This operation can be chained. Transforms are combined and applied
+	///lazily.
+	///
+	///@param normal The normal vector of the plane to be mirrored over
+	pub fn mirror(&self, normal: Vector3<f64>) -> Self {
+		if normal.norm() == 0.0 {
+			return Self::default();
+		}
+		let n = normal.normalize();
+		let m = Matrix3::identity() - (2.0 * (n * n.transpose()));
+		let m = Matrix3x4::from_columns(&[
+			m.column(0).into(),
+			m.column(1).into(),
+			m.column(2).into(),
+			Vector3::default(),
+		]);
+		Self::from(self.meshbool_impl.transform(&m))
+	}
+
+	///This function does not change the topology, but allows the vertices to be
+	///moved according to any arbitrary input function. It is easy to create a
+	///function that warps a geometrically valid object into one which overlaps, but
+	///that is not checked here, so it is up to the user to choose their function
+	///with discretion.
+	///
+	///@param warpFunc A function that modifies a given vertex position.
+	pub fn warp(&self, warp_func: impl Fn(&mut Point3<f64>)) -> Self {
+		let old_impl = &self.meshbool_impl;
+		if old_impl.status != ManifoldError::NoError {
+			let mut meshbool_impl = MeshBoolImpl::default();
+			meshbool_impl.status = old_impl.status;
+			return Self::from(meshbool_impl);
+		}
+		let mut meshbool_impl = old_impl.clone();
+		meshbool_impl.warp(warp_func);
+		Self::from(meshbool_impl)
+	}
+
+	///Same as Manifold::Warp but calls warpFunc with with
+	///a VecView which is roughly equivalent to std::span
+	///pointing to all vec3 elements to be modified in-place
+	///
+	///@param warpFunc A function that modifies multiple vertex positions.
+	pub fn warp_batch(&self, warp_func: impl Fn(&mut [Point3<f64>])) -> Self {
+		let old_impl = &self.meshbool_impl;
+		if old_impl.status != ManifoldError::NoError {
+			let mut meshbool_impl = MeshBoolImpl::default();
+			meshbool_impl.status = old_impl.status;
+			return Self::from(meshbool_impl);
+		}
+		let mut meshbool_impl = old_impl.clone();
+		meshbool_impl.warp_batch(warp_func);
+		Self::from(meshbool_impl)
+	}
+
 	///Create a new copy of this manifold with updated vertex properties by
 	///supplying a function that takes the existing position and properties as
 	///input. You may specify any number of output properties, allowing creation and
@@ -334,7 +455,7 @@ impl MeshBool {
 	pub fn set_properties(
 		&self,
 		num_prop: i32,
-		prop_func: Option<fn(new_prop: &mut [f64], position: Point3<f64>, old_prop: &[f64])>,
+		prop_func: Option<impl Fn(&mut [f64], Point3<f64>, &[f64])>,
 	) -> Self {
 		let mut meshbool_impl = self.meshbool_impl.clone();
 		let old_num_prop = self.num_prop();
@@ -367,6 +488,45 @@ impl MeshBool {
 		return Self::from(meshbool_impl);
 	}
 
+	///Curvature is the inverse of the radius of curvature, and signed such that
+	///positive is convex and negative is concave. There are two orthogonal
+	///principal curvatures at any point on a manifold, with one maximum and the
+	///other minimum. Gaussian curvature is their product, while mean
+	///curvature is their sum. This approximates them for every vertex and assigns
+	///them as vertex properties on the given channels.
+	///
+	///@param gaussian_idx The property channel index in which to store the Gaussian
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	///
+	///@param mean_idx The property channel index in which to store the mean
+	///curvature. An index < 0 will be ignored (stores nothing). The property set
+	///will be automatically expanded to include the channel index specified.
+	pub fn calculate_curvature(&self, gaussian_idx: i32, mean_idx: i32) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		meshbool_impl.calculate_curvature(gaussian_idx, mean_idx);
+		Self::from(meshbool_impl)
+	}
+
+	///Fills in vertex properties for normal vectors, calculated from the mesh
+	///geometry. Flat faces composed of three or more triangles will remain flat.
+	///
+	///@param normalIdx The property channel in which to store the X
+	///values of the normals. The X, Y, and Z channels will be sequential. The
+	///property set will be automatically expanded such that NumProp will be at
+	///least normalIdx + 3.
+	///
+	///@param minSharpAngle Any edges with angles greater than this value will
+	///remain sharp, getting different normal vector properties on each side of the
+	///edge. By default, no edges are sharp and all normals are shared. With a value
+	///of zero, the model is faceted and all normals match their triangle normals,
+	///but in this case it would be better not to calculate normals at all.
+	/*pub fn calculate_normals(&self, normal_idx: i32, min_sharp_angle: f64) -> Self {
+		let mut meshbool_impl = self.meshbool_impl.clone();
+		meshbool_impl.set_normals(normal_idx, min_sharp_angle);
+		return Self::from(meshbool_impl);
+	}*/
+
 	///	The central operation of this library: the Boolean combines two manifolds
 	///	into another by calculating their intersections and removing the unused
 	///	portions.
@@ -383,7 +543,58 @@ impl MeshBool {
 		Self::from(Boolean3::new(&self.meshbool_impl, &other.meshbool_impl, op).result(op))
 	}
 
-	fn get_mesh_gl_impl(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGL {
+	///Split cuts this manifold in two using the cutter manifold. The first result
+	///is the intersection, second is the difference. This is more efficient than
+	///doing them separately.
+	///
+	///@param cutter
+	pub fn split(&self, cutter: &Self) -> (Self, Self) {
+		let impl1 = &self.meshbool_impl;
+		let impl2 = &cutter.meshbool_impl;
+
+		let boolean = Boolean3::new(impl1, impl2, OpType::Subtract);
+		let result1 = boolean.result(OpType::Intersect);
+		let result2 = boolean.result(OpType::Subtract);
+		(Self::from(result1), Self::from(result2))
+	}
+
+	///Convenient version of Split() for a half-space.
+	///
+	///@param normal This vector is normal to the cutting plane and its length does
+	///not matter. The first result is in the direction of this vector, the second
+	///result is on the opposite side.
+	///@param originOffset The distance of the plane from the origin in the
+	///direction of the normal vector.
+	pub fn split_by_plane(&self, normal: Vector3<f64>, origin_offset: f64) -> (Self, Self) {
+		self.split(&halfspace(self.bounding_box(), normal, origin_offset))
+	}
+
+	///Identical to SplitByPlane(), but calculating and returning only the first
+	///result.
+	///
+	///@param normal This vector is normal to the cutting plane and its length does
+	///not matter. The result is in the direction of this vector from the plane.
+	///@param originOffset The distance of the plane from the origin in the
+	///direction of the normal vector.
+	pub fn trim_by_plane(&self, normal: Vector3<f64>, origin_offset: f64) -> Self {
+		self ^ &halfspace(self.bounding_box(), normal, origin_offset)
+	}
+
+	///Returns the cross section of this object parallel to the X-Y plane at the
+	///specified Z height, defaulting to zero. Using a height equal to the bottom of
+	///the bounding box will return the bottom faces, while using a height equal to
+	///the top of the bounding box will return empty.
+	pub fn slice(&self, height: f64) -> Polygons {
+		self.meshbool_impl.slice(height)
+	}
+
+	fn get_mesh_gl_impl<F, I>(meshbool_impl: &MeshBoolImpl, normal_idx: i32) -> MeshGLP<F, I>
+	where
+		F: LossyFrom<f64> + Copy,
+		f64: From<F>,
+		I: LossyFrom<usize> + Copy,
+		usize: LossyFrom<I>,
+	{
 		let num_prop = meshbool_impl.num_prop();
 		let num_vert = meshbool_impl.num_prop_vert();
 		let num_tri = meshbool_impl.num_tri();
@@ -391,16 +602,15 @@ impl MeshBool {
 		let is_original = meshbool_impl.mesh_relation.original_id >= 0;
 		let update_normals = !is_original && normal_idx >= 0;
 
-		let out_num_prop: u32 = 3 + num_prop as u32;
-		let tolerance = meshbool_impl.tolerance;
-		/*let tolerance = meshbool_impl
-		.tolerance
-		.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale());*/
+		let out_num_prop = 3 + num_prop;
+		let tolerance = meshbool_impl
+			.tolerance
+			.max((f32::EPSILON as f64) * meshbool_impl.bbox.scale());
 
-		let mut tri_verts: Vec<u32> = vec![0; 3 * num_tri];
+		let mut tri_verts: Vec<I> = vec![I::lossy_from(0); 3 * num_tri];
 
 		// Sort the triangles into runs
-		let mut face_id: Vec<u32> = vec![0; num_tri];
+		let mut face_id: Vec<I> = vec![I::lossy_from(0); num_tri];
 		let mut tri_new2old: Vec<_> = (0..num_tri).map(|i| i as i32).collect();
 		let tri_ref = &meshbool_impl.mesh_relation.tri_ref;
 		// Don't sort originals - keep them in order
@@ -409,13 +619,13 @@ impl MeshBool {
 				.sort_by_key(|&i| (tri_ref[i as usize].original_id, tri_ref[i as usize].mesh_id));
 		}
 
-		let mut run_index: Vec<u32> = Vec::new();
+		let mut run_index: Vec<I> = Vec::new();
 		let mut run_original_id: Vec<u32> = Vec::new();
-		let mut run_transform: Vec<f64> = Vec::new();
+		let mut run_transform: Vec<F> = Vec::new();
 
 		let mut run_normal_transform: Vec<Matrix3<f64>> = Vec::new();
 		let mut add_run = |tri, rel: Relation| {
-			run_index.push((3 * tri) as u32);
+			run_index.push(I::lossy_from(3 * tri));
 			run_original_id.push(rel.original_id as u32);
 			if update_normals {
 				run_normal_transform.push(
@@ -426,7 +636,7 @@ impl MeshBool {
 			if !is_original {
 				for col in 0..4 {
 					for row in 0..3 {
-						run_transform.push(rel.transform[(row, col)])
+						run_transform.push(F::lossy_from(rel.transform[(row, col)]))
 					}
 				}
 			}
@@ -439,13 +649,14 @@ impl MeshBool {
 			let tri_ref = tri_ref[old_tri];
 			let mesh_id = tri_ref.mesh_id;
 
-			face_id[tri] = (if tri_ref.face_id >= 0 {
-				tri_ref.face_id
+			face_id[tri] = I::lossy_from(if tri_ref.face_id >= 0 {
+				tri_ref.face_id as usize
 			} else {
-				tri_ref.coplanar_id
-			}) as u32;
+				tri_ref.coplanar_id as usize
+			});
 			for i in 0..3 {
-				tri_verts[3 * tri + i] = meshbool_impl.halfedge[3 * old_tri + i].start_vert as u32;
+				tri_verts[3 * tri + i] =
+					I::lossy_from(meshbool_impl.halfedge[3 * old_tri + i].start_vert as usize);
 			}
 
 			if mesh_id != last_id {
@@ -461,20 +672,20 @@ impl MeshBool {
 			add_run(num_tri, pair.1);
 		}
 
-		run_index.push((3 * num_tri) as u32);
+		run_index.push(I::lossy_from(3 * num_tri));
 
 		// Early return for no props
 		if num_prop == 0 {
-			let mut vert_properties: Vec<f64> = vec![0.0; 3 * num_vert];
+			let mut vert_properties: Vec<F> = vec![F::lossy_from(0.0); 3 * num_vert];
 			for i in 0..num_vert {
 				let v = meshbool_impl.vert_pos[i];
-				vert_properties[3 * i] = v.x;
-				vert_properties[3 * i + 1] = v.y;
-				vert_properties[3 * i + 2] = v.z;
+				vert_properties[3 * i] = F::lossy_from(v.x);
+				vert_properties[3 * i + 1] = F::lossy_from(v.y);
+				vert_properties[3 * i + 2] = F::lossy_from(v.z);
 			}
 
-			return MeshGL {
-				num_prop: out_num_prop,
+			return MeshGLP {
+				num_prop: I::lossy_from(out_num_prop),
 				vert_properties,
 				tri_verts,
 				merge_from_vert: Vec::default(),
@@ -483,32 +694,33 @@ impl MeshBool {
 				run_original_id,
 				run_transform,
 				face_id,
-				tolerance,
+				tolerance: F::lossy_from(tolerance),
 			};
 		}
 
 		// Duplicate verts with different props
 		let mut vert2idx: Vec<i32> = vec![-1; meshbool_impl.num_vert()];
 		let mut vert_prop_pair: Vec<Vec<Vector2<i32>>> = vec![Vec::new(); meshbool_impl.num_vert()];
-		let mut vert_properties: Vec<f64> = Vec::with_capacity(num_vert * (out_num_prop as usize));
+		let mut vert_properties: Vec<F> = Vec::with_capacity(num_vert * out_num_prop);
 
-		let mut merge_from_vert: Vec<u32> = Vec::new();
-		let mut merge_to_vert: Vec<u32> = Vec::new();
+		let mut merge_from_vert: Vec<I> = Vec::new();
+		let mut merge_to_vert: Vec<I> = Vec::new();
 
 		for run in 0..run_original_id.len() {
-			for tri in (run_index[run] / 3)..run_index[run + 1] / 3 {
-				let tri = tri as usize;
+			for tri in
+				(usize::lossy_from(run_index[run]) / 3)..(usize::lossy_from(run_index[run + 1]) / 3)
+			{
 				for i in 0..3 {
 					let prop =
 						meshbool_impl.halfedge[3 * (tri_new2old[tri] as usize) + i].prop_vert;
-					let vert = tri_verts[3 * tri + i] as usize;
+					let vert = usize::lossy_from(tri_verts[3 * tri + i]);
 
 					let bin = &mut vert_prop_pair[vert];
 					let mut b_found = false;
 					for b in bin.iter() {
 						if b.x == prop {
 							b_found = true;
-							tri_verts[3 * tri + i] = b.y as u32;
+							tri_verts[3 * tri + i] = I::lossy_from(b.y as usize);
 							break;
 						}
 					}
@@ -516,44 +728,47 @@ impl MeshBool {
 					if b_found {
 						continue;
 					}
-					let idx = vert_properties.len() / (out_num_prop as usize);
-					tri_verts[3 * tri + i] = idx as u32;
+					let idx = vert_properties.len() / out_num_prop;
+					tri_verts[3 * tri + i] = I::lossy_from(idx);
 					bin.push(Vector2::new(prop, idx as i32));
 
 					for p in 0..3 {
-						vert_properties.push(meshbool_impl.vert_pos[vert][p]);
+						vert_properties.push(F::lossy_from(meshbool_impl.vert_pos[vert][p]));
 					}
 					for p in 0..num_prop {
-						vert_properties
-							.push(meshbool_impl.properties[(prop as usize) * num_prop + p]);
+						vert_properties.push(F::lossy_from(
+							meshbool_impl.properties[(prop as usize) * num_prop + p],
+						));
 					}
 
 					if update_normals {
 						let mut normal = Vector3::<f64>::default();
-						let start = vert_properties.len() - (out_num_prop as usize);
+						let start = vert_properties.len() - out_num_prop;
 						for i in 0..3 {
-							normal[i] =
-								vert_properties[start + 3 + (normal_idx as usize) + i] as f64;
+							normal[i] = f64::from(
+								vert_properties[((start + 3 + i) as i32 + normal_idx) as usize],
+							);
 						}
 
 						normal = (run_normal_transform[run] * normal).normalize();
 						for i in 0..3 {
-							vert_properties[start + 3 + (normal_idx as usize) + i] = normal[i];
+							vert_properties[((start + 3 + i) as i32 + normal_idx) as usize] =
+								F::lossy_from(normal[i]);
 						}
 					}
 
 					if vert2idx[vert] == -1 {
 						vert2idx[vert] = idx as i32;
 					} else {
-						merge_from_vert.push(idx as u32);
-						merge_to_vert.push(vert2idx[vert] as u32);
+						merge_from_vert.push(I::lossy_from(idx));
+						merge_to_vert.push(I::lossy_from(vert2idx[vert] as usize));
 					}
 				}
 			}
 		}
 
-		MeshGL {
-			num_prop: out_num_prop,
+		MeshGLP {
+			num_prop: I::lossy_from(out_num_prop),
 			vert_properties,
 			tri_verts,
 			merge_from_vert,
@@ -562,7 +777,7 @@ impl MeshBool {
 			run_original_id,
 			run_transform,
 			face_id,
-			tolerance,
+			tolerance: F::lossy_from(tolerance),
 		}
 	}
 
@@ -578,11 +793,33 @@ impl MeshBool {
 	///the applied transforms and front/back side. normalIdx + 3 must be <=
 	///numProp, and all original MeshGLs must use the same channels for their
 	///normals.
-	pub fn get_mesh_gl(&self, normal_idx: i32) -> MeshGL {
+	pub fn get_mesh_gl_32(&self, normal_idx: i32) -> MeshGL32 {
 		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
 	}
 
-	pub fn from_meshgl(mesh_gl: &MeshGL) -> Self {
+	///The most complete output of this library, returning a MeshGL that is designed
+	///to easily push into a renderer, including all interleaved vertex properties
+	///that may have been input. It also includes relations to all the input meshes
+	///that form a part of this result and the transforms applied to each.
+	///
+	///@param normalIdx If the original MeshGL inputs that formed this manifold had
+	///properties corresponding to normal vectors, you can specify the first of the
+	///three consecutive property channels forming the (x, y, z) normals, which will
+	///cause this output MeshGL to automatically update these normals according to
+	///the applied transforms and front/back side. normalIdx + 3 must be <=
+	///numProp, and all original MeshGLs must use the same channels for their
+	///normals.
+	pub fn get_mesh_gl_64(&self, normal_idx: i32) -> MeshGL64 {
+		Self::get_mesh_gl_impl(&self.meshbool_impl, normal_idx)
+	}
+
+	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
+	where
+		F: LossyFrom<f64> + Copy,
+		f64: From<F>,
+		I: LossyFrom<usize> + Copy,
+		usize: LossyFrom<I>,
+	{
 		Self::from(MeshBoolImpl::from_meshgl(mesh_gl))
 	}
 

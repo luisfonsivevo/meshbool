@@ -1,4 +1,4 @@
-use crate::collider::Recorder;
+use crate::collider::{Recorder, SimpleRecorder};
 use crate::common::{AABB, AABBOverlap, OpType};
 use crate::disjoint_sets::DisjointSets;
 use crate::meshboolimpl::MeshBoolImpl;
@@ -494,7 +494,7 @@ fn intersect12(
 	};
 
 	b.collider
-		.collisions_from_fn::<_, _, Kernel12Recorder>(f, a.halfedge.len(), &mut recorder);
+		.collisions_from_fn::<false, _, _, Kernel12Recorder>(f, a.halfedge.len(), &mut recorder);
 
 	let result = recorder.local_store;
 	let mut p1q2 = result.p1q2;
@@ -512,25 +512,6 @@ fn intersect12(
 }
 
 //3D vertex-solid intersection test
-struct Winding03Recorder<'a, 'b> {
-	w03: &'a mut [i32],
-	k02: &'a Kernel02<'b>,
-	verts: &'a [u32],
-	forward: bool,
-}
-
-impl<'a, 'b> Recorder for Winding03Recorder<'a, 'b> {
-	fn record(&mut self, query_idx: i32, leaf_idx: i32) {
-		let (s02, z02) = self
-			.k02
-			.call(self.verts[query_idx as usize] as usize, leaf_idx as usize);
-		if z02.is_finite() {
-			self.w03[self.verts[query_idx as usize] as usize] +=
-				s02 * (if !self.forward { -1 } else { 1 })
-		}
-	}
-}
-
 fn winding03(
 	in_p: &MeshBoolImpl,
 	in_q: &MeshBoolImpl,
@@ -572,16 +553,16 @@ fn winding03(
 		sym_pert_map,
 		forward,
 	};
-
-	let mut recorder = Winding03Recorder {
-		w03: &mut w03,
-		k02: &k02,
-		verts: &verts,
-		forward,
+	let mut recorderf = |query_idx: i32, leaf_idx: i32| {
+		let (s02, z02) = k02.call(verts[query_idx as usize] as usize, leaf_idx as usize);
+		if z02.is_finite() {
+			w03[verts[query_idx as usize] as usize] += s02 * (if !forward { -1 } else { 1 });
+		}
 	};
+	let mut recorder = SimpleRecorder::new(&mut recorderf);
 	let f = |i| a.vert_pos[verts[i as usize] as usize];
 	b.collider
-		.collisions_from_fn::<_, _, Winding03Recorder>(f, verts.len(), &mut recorder);
+		.collisions_from_fn::<false, _, _, SimpleRecorder<'_>>(f, verts.len(), &mut recorder);
 	// flood fill
 	for i in 0..w03.len() {
 		let root = u_a.find(i as u32) as usize;

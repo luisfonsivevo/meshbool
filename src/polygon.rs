@@ -1,3 +1,4 @@
+use crate::common::Polygons;
 use crate::common::{OrderedF64, Rect};
 use crate::tree2d::{build_2d_tree, query_2d_tree};
 use crate::utils::{K_PRECISION, ccw};
@@ -17,6 +18,13 @@ pub struct PolyVert {
 	pub pos: Point2<f64>,
 	/// ID or index into another vertex vector
 	pub idx: i32,
+}
+
+#[allow(unused)]
+impl PolyVert {
+	pub fn new(pos: Point2<f64>, idx: i32) -> Self {
+		Self { pos, idx }
+	}
 }
 
 pub type SimplePolygonIdx = Vec<PolyVert>;
@@ -987,4 +995,35 @@ pub fn triangulate_idx(polys: &PolygonsIdx, epsilon: f64, allow_convex: bool) ->
 		let triangulator = EarClip::new(polys, epsilon);
 		triangulator.triangulate()
 	}
+}
+
+///@brief Triangulates a set of &epsilon;-valid polygons. If the input is not
+///&epsilon;-valid, the triangulation may overlap, but will always return a
+///manifold result that matches the input edge directions.
+///
+///@param polygons The set of polygons, wound CCW and representing multiple
+///polygons and/or holes.
+///@param epsilon The value of &epsilon;, bounding the uncertainty of the
+///input.
+///@param allowConvex If true (default), the triangulator will use a fast
+///triangulation if the input is convex, falling back to ear-clipping if not.
+///The triangle quality may be lower, so set to false to disable this
+///optimization.
+///@return std::vector<ivec3> The triangles, referencing the original
+///polygon points in order.
+pub fn triangulate(polygons: &Polygons, epsilon: f64, allow_convex: bool) -> Vec<Vector3<i32>> {
+	let mut idx: i32 = 0;
+	let mut polygons_indexed = PolygonsIdx::default();
+	for poly in polygons.iter() {
+		let mut simple_indexed = SimplePolygonIdx::default();
+		for poly_vert in poly.iter() {
+			simple_indexed.push(PolyVert {
+				pos: poly_vert.clone(),
+				idx,
+			});
+			idx += 1;
+		}
+		polygons_indexed.push(simple_indexed);
+	}
+	triangulate_idx(&polygons_indexed, epsilon, allow_convex)
 }

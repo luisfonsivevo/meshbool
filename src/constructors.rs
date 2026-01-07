@@ -1,5 +1,5 @@
 use crate::MeshBool;
-use crate::common::{Polygons, Quality, SimplePolygon};
+use crate::common::{Polygons, Quality, SimplePolygon, cosd, sind};
 use crate::meshboolimpl::{MeshBoolImpl, Shape};
 use crate::polygon::{PolyVert, PolygonsIdx, SimplePolygonIdx, triangulate_idx};
 use nalgebra::{Matrix2, Matrix3x4, Point2, Point3, Vector2, Vector3};
@@ -78,8 +78,8 @@ impl MeshBool {
 		let d_phi = 360.0 / (n as f64);
 		for i in 0..n {
 			circle[i as usize] = Point2::<f64>::new(
-				radius_low * (d_phi * i as f64).to_radians().cos(),
-				radius_low * (d_phi * i as f64).to_radians().sin(),
+				radius_low * cosd(d_phi * i as f64),
+				radius_low * sind(d_phi * i as f64),
 			);
 		}
 
@@ -92,6 +92,40 @@ impl MeshBool {
 		} else {
 			cylinder
 		}
+	}
+
+	///Constructs a geodesic sphere of a given radius.
+	///
+	///@param radius Radius of the sphere. Must be positive.
+	///@param circularSegments Number of segments along its
+	///diameter. This number will always be rounded up to the nearest factor of
+	///four, as this sphere is constructed by refining an octahedron. This means
+	///there are a circle of vertices on all three of the axis planes. Default is
+	///calculated by the static Defaults.
+	pub fn sphere(radius: f64, circular_segments: i32) -> Self {
+		if radius <= 0.0 {
+			return Self::invalid();
+		}
+		let n: i32 = if circular_segments > 0 {
+			(circular_segments + 3) / 4
+		} else {
+			(Quality::get_circular_segments(radius) / 4) as i32
+		};
+		let mut meshbool_impl = MeshBoolImpl::from_shape(Shape::Octahedron, Matrix3x4::identity());
+		meshbool_impl.subdivide(|_, _, _| n - 1, false);
+		meshbool_impl.vert_pos.iter_mut().for_each(|v| {
+			*v = Vector3::from(core::f64::consts::FRAC_PI_2 * (Vector3::repeat(1.0) - v.coords))
+				.into();
+			v.iter_mut().for_each(|i| *i = i.cos());
+			*v = (radius * Vector3::from(v.coords.normalize())).into();
+			if v.x.is_nan() {
+				*v = Vector3::repeat(0.0).into();
+			}
+		});
+		meshbool_impl.finish();
+		// Ignore preceding octahedron.
+		meshbool_impl.initialize_original(false);
+		return Self::from(meshbool_impl);
 	}
 
 	///Constructs a manifold from a set of polygons by extruding them along the
@@ -150,12 +184,7 @@ impl MeshBool {
 			let alpha = (i as f64) / (n_divisions as f64);
 			let phi = alpha * twist_degrees;
 			let scale = Vector2::new(1.0, 1.0).lerp(&scale_top, alpha);
-			let rotation = Matrix2::new(
-				phi.to_radians().cos(),
-				-phi.to_radians().sin(),
-				phi.to_radians().sin(),
-				phi.to_radians().cos(),
-			);
+			let rotation = Matrix2::new(cosd(phi), -sind(phi), sind(phi), cosd(phi));
 			let transform = Matrix2::new(scale.x, 0.0, 0.0, scale.y) * rotation;
 			let mut j = 0;
 			let mut idx = 0;
