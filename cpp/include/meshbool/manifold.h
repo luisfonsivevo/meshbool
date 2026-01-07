@@ -338,7 +338,7 @@ class MeshGLP {
 /**
  * @brief Single-precision - ideal for most uses, especially graphics.
  */
-using MeshGL = MeshGLP<rust::crate::MeshGL, float>;
+using MeshGL = MeshGLP<rust::crate::MeshGL32, float>;
 /**
  * @brief Double-precision, 64-bit indices - best for huge meshes.
  */
@@ -397,15 +397,17 @@ class Manifold {
    */
   ///@{
   inline Manifold(const MeshGL& mesh)
-      : internal(rust::crate::MeshBool::from_meshgl(mesh.internal).clone()) {}
+      : internal(rust::crate::MeshBool::from_meshgl_32(mesh.internal).clone()) {
+  }
   inline Manifold(const MeshGL64& mesh)
-      : internal(rust::crate::MeshBool::from_meshgl64(mesh.internal).clone()) {}
+      : internal(rust::crate::MeshBool::from_meshgl_64(mesh.internal).clone()) {
+  }
   // TODO: originally negative 1?
   inline MeshGL GetMeshGL(int normalIdx = -1) const {
-    return this->internal.get_mesh_gl(normalIdx);
+    return this->internal.get_mesh_gl_32(normalIdx);
   }
   inline MeshGL64 GetMeshGL64(int normalIdx = -1) const {
-    return this->internal.get_mesh_gl64(normalIdx);
+    return this->internal.get_mesh_gl_64(normalIdx);
   }
   ///@}
 
