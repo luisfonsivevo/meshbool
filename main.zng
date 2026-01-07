@@ -443,10 +443,10 @@ mod crate {
 		fn split_by_plane(&self, ::nalgebra::Vector3<f64>, f64) -> (MeshBool, MeshBool);
 		fn trim_by_plane(&self, ::nalgebra::Vector3<f64>, f64) -> MeshBool;
 		fn slice(&self, f64) -> ::std::vec::Vec<::std::vec::Vec<::nalgebra::Point2<f64>>>;
-		fn get_mesh_gl(&self, i32) -> MeshGL;
-		fn get_mesh_gl64(&self, i32) -> MeshGL64;
-		fn from_meshgl(&MeshGL) -> MeshBool;
-		fn from_meshgl64(&MeshGL64) -> MeshBool;
+		fn get_mesh_gl_32(&self, i32) -> MeshGL32;
+		fn get_mesh_gl_64(&self, i32) -> MeshGL64;
+		fn from_meshgl_32(&MeshGL32) -> MeshBool;
+		fn from_meshgl_64(&MeshGL64) -> MeshBool;
 		fn is_empty(&self) -> bool;
 		fn status(&self) -> ManifoldError;
 		fn num_vert(&self) -> usize;
@@ -470,14 +470,14 @@ mod crate {
 		field 1 (offset = 320, type = MeshBool);
 	}
 
-	type MeshGL {
+	type MeshGL32 {
 		#layout(size = 200, align = 8);
 
-		fn default() -> MeshGL;
-		fn clone(&self) -> MeshGL;
+		fn default() -> MeshGL32;
+		fn clone(&self) -> MeshGL32;
 
-		fn num_vert(&self) -> u32;
-		fn num_tri(&self) -> u32;
+		fn num_vert(&self) -> usize;
+		fn num_tri(&self) -> usize;
 
 		//field name (offset = X, type = T);
 		field num_prop (offset = 192, type = u32);
@@ -500,8 +500,8 @@ mod crate {
 		fn default() -> MeshGL64;
 		fn clone(&self) -> MeshGL64;
 
-		fn num_vert(&self) -> u64;
-		fn num_tri(&self) -> u64;
+		fn num_vert(&self) -> usize;
+		fn num_tri(&self) -> usize;
 
 		//field name (offset = X, type = T);
 		field num_prop (offset = 192, type = u64);

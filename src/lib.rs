@@ -180,6 +180,15 @@ mod generated {
 			*self == Self::VertexOutOfBounds
 		}
 	}
+
+	impl crate::MeshBool {
+		pub fn from_meshgl_32(mesh_gl: &crate::MeshGL32) -> Self {
+			Self::from_meshgl(mesh_gl)
+		}
+		pub fn from_meshgl_64(mesh_gl: &crate::MeshGL64) -> Self {
+			Self::from_meshgl(mesh_gl)
+		}
+	}
 }
 
 #[test]
