@@ -216,6 +216,28 @@ where
 	}
 }
 
+pub trait FloatKind {
+	fn is_f64() -> bool;
+	fn is_f32() -> bool;
+}
+
+impl FloatKind for f64 {
+	fn is_f64() -> bool {
+		true
+	}
+	fn is_f32() -> bool {
+		false
+	}
+}
+impl FloatKind for f32 {
+	fn is_f64() -> bool {
+		false
+	}
+	fn is_f32() -> bool {
+		true
+	}
+}
+
 //lossy_from!([from, from, from], to)
 macro_rules! lossy_from {
 	([ $( $f:ty ),* ], $t:ty) => {

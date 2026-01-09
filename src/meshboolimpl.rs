@@ -1,5 +1,5 @@
 use crate::collider::Collider;
-use crate::common::{AABB, LossyFrom, sun_acos};
+use crate::common::{AABB, FloatKind, LossyFrom, sun_acos};
 use crate::disjoint_sets::DisjointSets;
 use crate::mesh_fixes::{FlipTris, transform_normal};
 use crate::parallel::exclusive_scan_in_place;
@@ -188,7 +188,7 @@ impl<'a, const USE_PROP: bool, F: FnMut(i32, i32, i32)> PrepHalfedges<'a, USE_PR
 impl MeshBoolImpl {
 	pub fn from_meshgl<F, I>(mesh_gl: &MeshGLP<F, I>) -> Self
 	where
-		F: LossyFrom<f64> + Copy,
+		F: LossyFrom<f64> + Copy + FloatKind,
 		f64: From<F>,
 		I: LossyFrom<usize> + Copy,
 		usize: LossyFrom<I>,
@@ -415,7 +415,7 @@ impl MeshBoolImpl {
 		}
 
 		manifold.calculate_bbox();
-		manifold.set_epsilon(-1.0f64, false); // TODO: if Precision == float
+		manifold.set_epsilon(-1.0f64, F::is_f32());
 
 		// we need to split pinched verts before calculating vertex normals, because
 		// the algorithm doesn't work with pinched verts
